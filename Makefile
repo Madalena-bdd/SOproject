@@ -23,6 +23,7 @@ kvs: main.c constants.h operations.o parser.o kvs.o
 # Limpeza de arquivos gerados
 clean:
 	rm -f *.o kvs
+	rm -rf *.dSYM
 
 # Execução do programa
 run: kvs
