@@ -1,21 +1,13 @@
-#DEBUG
-WRITE [(martins,louca)(birdadagua,louCONA)]
-#DEBUG 
-SHOW
 #Leitura de chave inexistente
 READ [c1]
-#DEBUG 
-SHOW
 #Criação e escrita de 2 chaves
 WRITE [(c1,v1)(chave2,valor-exemplo)]
-#DEBUG 
-SHOW
 #Leitura de chave existente
 READ [chave2]
 #Escrita de uma chave nova e outra existente
 WRITE [(chave2,valor-exemplo2)(umaChave,umValor)]
 # backup
-BACKUP
+#BACKUP
 # Eliminação de chave existente e de chave não existente
 DELETE[c1,chaveAleatoria]
 #Espera de um segundo

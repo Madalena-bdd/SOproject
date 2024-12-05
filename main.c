@@ -44,13 +44,13 @@ int process_job_file(const char *filename) {
         switch (command) {
             case CMD_WRITE:
                 num_pairs = (size_t)parse_write(fd, keys, values, MAX_WRITE_SIZE, MAX_STRING_SIZE);
-                /*if (num_pairs == 0) {
-                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                if (num_pairs == 0) {
+                    //dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 if (kvs_write(num_pairs, keys, values)) {
-                    dprintf(output_fd, "Failed to write pair\n");
-                }*/
+                    //dprintf(output_fd, "Failed to write pair\n");
+                }
                 break;
 
             case CMD_READ:
