@@ -31,7 +31,7 @@ int process_job_file(const char *filename) {
 
     // Criar o nome do arquivo de saída
     char output_filename[MAX_JOB_FILE_NAME_SIZE];
-    snprintf(output_filename, sizeof(output_filename), "%s.out", filename);
+    snprintf(output_filename, sizeof(output_filename), "%.*s.out", (int)(strlen(filename) - 4), filename);
 
     int output_fd = open(output_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (output_fd == -1) {
@@ -44,95 +44,65 @@ int process_job_file(const char *filename) {
         switch (command) {
             case CMD_WRITE:
                 num_pairs = (size_t)parse_write(fd, keys, values, MAX_WRITE_SIZE, MAX_STRING_SIZE);
-                if (num_pairs == 0) {
+                /*if (num_pairs == 0) {
                     dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 if (kvs_write(num_pairs, keys, values)) {
                     dprintf(output_fd, "Failed to write pair\n");
-                }
+                }*/
                 break;
 
             case CMD_READ:
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
-                /*
-                if (num_pairs > 0) {
-                    for (size_t i = 0; i < num_pairs; i++) {
-                        char *value = kvs_read(keys[i]);  // Exemplo de como você pode pegar o valor
-                        if (value == NULL) {
-                            dprintf(output_fd, "[%s, KVSERROR]\n", keys[i]);  // Se não encontrar, imprime erro
-                        } else {
-                             dprintf(output_fd, "[%s, %s]\n", keys[i], value);  // Caso contrário, imprime valor
-                        }
-                    }
-                } else {
-                    dprintf(output_fd, "READ: Invalid command\n");
-                }
-                break;
-                */
                 if (num_pairs == 0) {
-                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                    //dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
-                if (kvs_read(num_pairs, keys)) {
-                    dprintf(output_fd, "Failed to read pair\n");
+                if (kvs_read(num_pairs, keys, output_fd)) {
+                    //dprintf(output_fd, "Failed to read pair\n");
                 }
                 break;
 
             case CMD_DELETE:
-                /*
-                num_pairs = parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
-                if (num_pairs > 0) {
-                    for (size_t i = 0; i < num_pairs; i++) {
-                        if (kvs_delete(keys[i]) == 0) {  // Se a chave for deletada com sucesso
-                            dprintf(output_fd, "[%s, DELETED]\n", keys[i]);
-                        } else {
-                            dprintf(output_fd, "[%s, KVSMISSING]\n", keys[i]);  // Se não encontrar a chave para deletar
-                        }
-                    }
-                } else {
-                    dprintf(output_fd, "DELETE: Invalid command\n");
-                }
-                break;
-
-                */
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
-                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                    //dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
-                if (kvs_delete(num_pairs, keys)) {
-                    dprintf(output_fd, "Failed to delete pair\n");
+                if (kvs_delete(num_pairs, keys, output_fd)) {
+                    //dprintf(output_fd, "Failed to delete pair\n");
                 }
+                kvs_delete(num_pairs, keys, output_fd);
                 break;
 
             case CMD_SHOW:
-                kvs_show();
+                kvs_show(output_fd);
                 break;
 
             case CMD_WAIT:
                 if (parse_wait(fd, &delay, NULL) == -1) {
-                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                    //dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 if (delay > 0) {
-                    dprintf(output_fd, "Waiting...\n");
-                    kvs_wait(delay);
+                    //dprintf(output_fd, "Waiting...\n");
+                    kvs_wait(delay); 
                 }
                 break;
 
             case CMD_BACKUP:
                 if (kvs_backup()) {
-                    dprintf(output_fd, "Failed to perform backup.\n");
+                    //dprintf(output_fd, "Failed to perform backup.\n");
                 }
                 break;
 
             case CMD_INVALID:
-                dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                //dprintf(output_fd, "Invalid command. See HELP for usage\n");
                 break;
 
             case CMD_HELP:
-                dprintf(output_fd,              //STDIN_FILENO e STDOUT se não for 
+                dprintf(output_fd,              
                     "Available commands:\n"
                     "  WRITE [(key,value)(key2,value2),...]\n"
                     "  READ [key,key2,...]\n"
