@@ -70,9 +70,9 @@ int process_job_file(const char *filename) {
                     //dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
-                if (kvs_delete(num_pairs, keys, output_fd)) {
+                //if (kvs_delete(num_pairs, keys, output_fd)) {
                     //dprintf(output_fd, "Failed to delete pair\n");
-                }
+                //}
                 kvs_delete(num_pairs, keys, output_fd);
                 break;
 

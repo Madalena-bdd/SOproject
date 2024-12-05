@@ -94,12 +94,18 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
   return 0;
 }
 
+
 void kvs_show(int output_fd) {
+  int first = 1;
   for (int i = 0; i < TABLE_SIZE; i++) {
     KeyNode *keyNode = kvs_table->table[i];
     while (keyNode != NULL) {
-      dprintf(output_fd, "(%s, %s)\n", keyNode->key, keyNode->value);
+      if (!first) {
+        dprintf(output_fd, "\n");
+      }
+      dprintf(output_fd, "(%s, %s)", keyNode->key, keyNode->value);
       keyNode = keyNode->next;
+      first = 0;
     }
   }
 }
