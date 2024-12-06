@@ -8,6 +8,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <pthread.h>
+#include <sys/wait.h>  
+#include <signal.h>    
+#include <errno.h>  
 #include "constants.h"
 #include "parser.h"
 #include "operations.h"
@@ -15,9 +18,44 @@
 #define MAX_FILES 100
 
 int concurrent_backups = 0;
+int running_backups = 0;  // Number of backups currently running
+
+// Recolher processos filhos finalizados
+void handle_sigchld(int signo) {
+    (void)signo; // Marca o parametro como usado
+    while (waitpid(-1, NULL, WNOHANG) > 0) {
+        __sync_fetch_and_sub(&running_backups, 1); // Decrementa atomicamente o contador
+    }
+}
+
+// Função para realizar o backup em um processo filho
+void perform_backup(const char *filename, int backup_num) {
+    // Criar o nome do arquivo de backup
+    char backup_filename[MAX_JOB_FILE_NAME_SIZE];
+    snprintf(backup_filename, sizeof(backup_filename), "%.*s-%d.bck",
+             (int)(strlen(filename) - 4), filename, backup_num);
+
+    // Abrir arquivo de backup
+    int backup_fd = open(backup_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    if (backup_fd == -1) {
+        perror("Failed to create backup file");
+        exit(1);
+    }
+
+    // Executar a operação de backup
+    if (kvs_backup(backup_fd) != 0) {
+        fprintf(stderr, "Failed to write backup to %s\n", backup_filename);
+        exit(1);
+    }
+
+    close(backup_fd);
+    exit(0); // Finaliza o processo filho
+}
 
 // Função para processar arquivos .job
 int process_job_file(const char *filename) {
+    static int backup_count = 0;  // Contador de backups
+
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
         perror("Failed to open file");
@@ -39,6 +77,7 @@ int process_job_file(const char *filename) {
         close(fd);
         return -1;
     }
+    
     enum Command command;
     while ((command = get_next(fd)) != EOC) {
         switch (command) {
@@ -92,9 +131,27 @@ int process_job_file(const char *filename) {
                 break;
 
             case CMD_BACKUP:
-                if (kvs_backup()) {
-                    //dprintf(output_fd, "Failed to perform backup.\n");
+                backup_count++;
+
+                // Criar processo filho para realizar o backup
+                while (running_backups >= concurrent_backups) {
+                    waitpid(-1, NULL, 0); // Esperar por um processo filho terminar
                 }
+
+                pid_t pid = fork();
+                if (pid == 0) {
+                    // Processo filho
+                    perform_backup(filename, backup_count);
+                } else if (pid > 0) {
+                    // Processo pai
+                    __sync_fetch_and_add(&running_backups, 1); // Incrementa contador atomicamente
+                } else {
+                    perror("Failed to fork process for backup");
+                }                
+                
+                //if (kvs_backup()) {
+                    //dprintf(output_fd, "Failed to perform backup.\n");
+                //}
                 break;
 
             case CMD_INVALID:
@@ -158,7 +215,15 @@ int main(int argc, char *argv[]) {
     }
 
     const char *dirpath = argv[1];
+
     concurrent_backups = atoi(argv[2]);
+    if (concurrent_backups <= 0) {
+        fprintf(stderr, "Error: <concurrent_backups> must be greater than 0\n");
+        return 1;
+    }
+
+
+    signal(SIGCHLD, handle_sigchld);  // Configura manipulador de sinal para SIGCHLD
 
     if (kvs_init()) {
         perror("Failed to initialize KVS");
@@ -168,6 +233,11 @@ int main(int argc, char *argv[]) {
     if (process_directory(dirpath) != 0) {
         kvs_terminate();
         return 1;
+    }
+    
+    // Esperar por todos os processos filhos finalizarem
+    while (running_backups > 0) {
+        waitpid(-1, NULL, 0);
     }
 
     kvs_terminate();

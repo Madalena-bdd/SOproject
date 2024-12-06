@@ -111,9 +111,24 @@ void kvs_show(int output_fd) {
 }
 
 
-int kvs_backup() {
-  return 0;
+int kvs_backup(int output_fd) {
+  if (kvs_table == NULL) {
+    fprintf(stderr, "KVS state must be initialized\n");
+    return 1;
+  }
+
+  // Iterar sobre os elementos da tabela e escrevê-los no output_fd
+  for (int i = 0; i < TABLE_SIZE; i++) {
+    KeyNode *keyNode = kvs_table->table[i];
+    while (keyNode != NULL) {
+      dprintf(output_fd, "(%s,%s)\n", keyNode->key, keyNode->value);
+      keyNode = keyNode->next;
+    }
+  }
+
+  return 0; // Sucesso
 }
+
 
 void kvs_wait(unsigned int delay_ms) {
   struct timespec delay = delay_to_timespec(delay_ms);
