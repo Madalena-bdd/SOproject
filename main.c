@@ -30,6 +30,7 @@ void handle_sigchld(int signo) {
 
 // Função para realizar o backup em um processo filho
 void perform_backup(const char *filename, int backup_num) {
+
     // Criar o nome do arquivo de backup
     char backup_filename[MAX_JOB_FILE_NAME_SIZE];
     snprintf(backup_filename, sizeof(backup_filename), "%.*s-%d.bck",
@@ -40,6 +41,8 @@ void perform_backup(const char *filename, int backup_num) {
     if (backup_fd == -1) {
         perror("Failed to create backup file");
         exit(1);
+    } else {
+        fprintf(stderr, "Backup file created: %s\n", backup_filename);  // Confirma a criação
     }
 
     // Executar a operação de backup
@@ -54,7 +57,7 @@ void perform_backup(const char *filename, int backup_num) {
 
 // Função para processar arquivos .job
 int process_job_file(const char *filename) {
-    static int backup_count = 0;  // Contador de backups
+    int backup_count = 0;  // Contador de backups por arquivo .job
 
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
@@ -84,29 +87,29 @@ int process_job_file(const char *filename) {
             case CMD_WRITE:
                 num_pairs = (size_t)parse_write(fd, keys, values, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
-                    //dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 if (kvs_write(num_pairs, keys, values)) {
-                    //dprintf(output_fd, "Failed to write pair\n");
+                    dprintf(output_fd, "Failed to write pair\n");
                 }
                 break;
 
             case CMD_READ:
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
-                    //dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 if (kvs_read(num_pairs, keys, output_fd)) {
-                    //dprintf(output_fd, "Failed to read pair\n");
+                    dprintf(output_fd, "Failed to read pair\n");
                 }
                 break;
 
             case CMD_DELETE:
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
-                    //dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 //if (kvs_delete(num_pairs, keys, output_fd)) {
