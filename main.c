@@ -30,8 +30,7 @@ void handle_sigchld(int signo) {
 
 // Função para realizar o backup em um processo filho
 void perform_backup(const char *filename, int backup_num) {
-
-    // Criar o nome do arquivo de backup
+    // Criar o nome do arquivo de backup com o número do backup
     char backup_filename[MAX_JOB_FILE_NAME_SIZE];
     snprintf(backup_filename, sizeof(backup_filename), "%.*s-%d.bck",
              (int)(strlen(filename) - 4), filename, backup_num);
@@ -42,7 +41,7 @@ void perform_backup(const char *filename, int backup_num) {
         perror("Failed to create backup file");
         exit(1);
     } else {
-        fprintf(stderr, "Backup file created: %s\n", backup_filename);  // Confirma a criação
+        fprintf(stderr, "Backup file created: %s\n", backup_filename);
     }
 
     // Executar a operação de backup
@@ -54,6 +53,8 @@ void perform_backup(const char *filename, int backup_num) {
     close(backup_fd);
     exit(0); // Finaliza o processo filho
 }
+
+
 
 // Função para processar arquivos .job
 int process_job_file(const char *filename) {
@@ -70,9 +71,11 @@ int process_job_file(const char *filename) {
     unsigned int delay;
     size_t num_pairs;
 
-    // Criar o nome do arquivo de saída
+    // Criar o nome do arquivo de saída (inclui o PID para exclusividade)
     char output_filename[MAX_JOB_FILE_NAME_SIZE];
-    snprintf(output_filename, sizeof(output_filename), "%.*s.out", (int)(strlen(filename) - 4), filename);
+    snprintf(output_filename, sizeof(output_filename), "%.*s.out",
+         (int)(strlen(filename) - 4), filename);
+
 
     int output_fd = open(output_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (output_fd == -1) {
@@ -80,6 +83,7 @@ int process_job_file(const char *filename) {
         close(fd);
         return -1;
     }
+
     
     enum Command command;
     while ((command = get_next(fd)) != EOC) {
@@ -201,15 +205,27 @@ int process_directory(const char *dirpath) {
 
         struct stat file_stat;
         if (stat(filepath, &file_stat) == 0 && S_ISREG(file_stat.st_mode) && strstr(entry->d_name, ".job")) {
-            if (process_job_file(filepath) != 0) {
-                fprintf(stderr, "Error processing file: %s\n", filepath);
+            // Processar cada arquivo em um processo filho separado
+            pid_t pid = fork();
+            if (pid == 0) {
+                // Processo filho
+                if (process_job_file(filepath) != 0) {
+                    fprintf(stderr, "Error processing file: %s\n", filepath);
+                }
+                exit(0);
+            } else if (pid < 0) {
+                perror("Failed to fork process for file processing");
             }
         }
     }
 
+    // Esperar que todos os processos filhos terminem
+    while (wait(NULL) > 0);
+
     closedir(dir);
     return 0;
 }
+
 
 int main(int argc, char *argv[]) {
     if (argc != 3) {
