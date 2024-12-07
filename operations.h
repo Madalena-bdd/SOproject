@@ -41,7 +41,7 @@ void kvs_show(int output_fd);
 int kvs_backup(int backup_fd);
 
 /// Waits for the last backup to be called.
-void kvs_wait_backup();
+int kvs_wait_backup();
 
 /// Waits for a given amount of time.
 /// @param delay_us Delay in milliseconds.

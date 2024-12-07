@@ -1,0 +1,4 @@
+WRITE [(a,1)(b,2)(c,3)(d,4)(e,5)]
+BACKUP
+WRITE [(f,1)(g,2)(h,3)(i,4)(j,5)]
+BACKUP
