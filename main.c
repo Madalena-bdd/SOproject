@@ -91,29 +91,29 @@ int process_job_file(const char *filename) {
             case CMD_WRITE:
                 num_pairs = (size_t)parse_write(fd, keys, values, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
-                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                    fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 if (kvs_write(num_pairs, keys, values)) {
-                    dprintf(output_fd, "Failed to write pair\n");
+                    fprintf(stderr, "Failed to write pair\n");
                 }
                 break;
 
             case CMD_READ:
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
-                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                    fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 if (kvs_read(num_pairs, keys, output_fd)) {
-                    dprintf(output_fd, "Failed to read pair\n");
+                    fprintf(stderr, "Failed to read pair\n");
                 }
                 break;
 
             case CMD_DELETE:
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
-                    dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                    fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 //if (kvs_delete(num_pairs, keys, output_fd)) {

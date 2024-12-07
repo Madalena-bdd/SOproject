@@ -57,13 +57,15 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
     return 1;
   }
 
+  qsort(keys, num_pairs, sizeof(keys[0]), (int (*)(const void*, const void*)) strcmp);   // Ordenar as chaves alfabeticamente
+
   dprintf(output_fd, "[");
   for (size_t i = 0; i < num_pairs; i++) {
     char* result = read_pair(kvs_table, keys[i]);
     if (result == NULL) {
-      dprintf(output_fd,"(%s,KVSERROR)", keys[i]);
+      dprintf(output_fd,"(%s,KVSERROR)", keys[i]);  // Quando a chave não é encontrada
     } else {
-      dprintf(output_fd,"(%s,%s)", keys[i], result);
+      dprintf(output_fd,"(%s,%s)", keys[i], result);  // Quando a chave é encontrada
     }
     free(result);
   }
@@ -96,16 +98,11 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
 
 
 void kvs_show(int output_fd) {
-  int first = 1;
   for (int i = 0; i < TABLE_SIZE; i++) {
     KeyNode *keyNode = kvs_table->table[i];
     while (keyNode != NULL) {
-      if (!first) {
-        dprintf(output_fd, "\n");
-      }
-      dprintf(output_fd, "(%s, %s)", keyNode->key, keyNode->value);
+      dprintf(output_fd, "(%s, %s)\n", keyNode->key, keyNode->value);
       keyNode = keyNode->next;
-      first = 0;
     }
   }
 }
