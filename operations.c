@@ -118,7 +118,7 @@ int kvs_backup(int output_fd) {
   for (int i = 0; i < TABLE_SIZE; i++) {
     KeyNode *keyNode = kvs_table->table[i];
     while (keyNode != NULL) {
-      dprintf(output_fd, "(%s,%s)\n", keyNode->key, keyNode->value);
+      dprintf(output_fd, "(%s, %s)\n", keyNode->key, keyNode->value);
       keyNode = keyNode->next;
     }
   }
