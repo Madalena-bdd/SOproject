@@ -19,7 +19,7 @@ run_test() {
 
     cp "$file" "$temp_dir"
 
-    local cmd="$kvs_binary $temp_dir 1" #single threaded
+    local cmd="$kvs_binary $temp_dir 1 1" #single threaded
 
     eval "./$cmd" &> /dev/null
 

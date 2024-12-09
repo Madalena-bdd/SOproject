@@ -43,6 +43,7 @@ int kvs_backup(int backup_fd);
 /// Waits for the last backup to be called.
 void kvs_wait_backup(const char *filename, int *backup_count);
 
+/// Performs a backup of the KVS state.
 void perform_backup(const char *filename, int backup_num);
 
 /// Waits for a given amount of time.

@@ -17,6 +17,7 @@
 
 #define MAX_FILES 100
 
+int MAX_THREADS = 0; // Número máximo de threads
 int concurrent_backups = 0;
 int running_backups = 0;  // Number of backups currently running
 
@@ -39,7 +40,7 @@ void perform_backup(const char *filename, int backup_num) {
     int backup_fd = open(backup_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (backup_fd == -1) {
         perror("Failed to create backup file");
-        exit(1);
+        exit(EXIT_FAILURE);
     } else {
         fprintf(stderr, "Backup file created: %s\n", backup_filename);
     }
@@ -47,11 +48,11 @@ void perform_backup(const char *filename, int backup_num) {
     // Executar a operação de backup
     if (kvs_backup(backup_fd) != 0) {
         fprintf(stderr, "Failed to write backup to %s\n", backup_filename);
-        exit(1);
+        exit(EXIT_FAILURE);
     }
 
     close(backup_fd);
-    exit(0); // Finaliza o processo filho
+    exit(EXIT_SUCCESS); // Finaliza o processo filho
 }
 
 
@@ -144,8 +145,6 @@ int process_job_file(const char *filename) {
 
             case CMD_BACKUP:
                 //fprintf(stderr, "Executing command: CMD_BACKUP\n"); // DEBUG
-                backup_count++;
-
                 kvs_wait_backup(filename, &backup_count);
                              
                 
@@ -222,7 +221,7 @@ int process_directory(const char *dirpath) {
 
 
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
+    if (argc != 4) { 
         fprintf(stderr, "Usage: %s <directory_path> <concurrent_backups>\n", argv[0]);
         return 1;
     }
@@ -230,7 +229,8 @@ int main(int argc, char *argv[]) {
     const char *dirpath = argv[1];
 
     concurrent_backups = atoi(argv[2]);
-    if (concurrent_backups <= 0) {
+    MAX_THREADS = atoi(argv[3]);
+    if (concurrent_backups <= 0 || MAX_THREADS <=0) { 
         fprintf(stderr, "Error: <concurrent_backups> must be greater than 0\n");
         return 1;
     }
