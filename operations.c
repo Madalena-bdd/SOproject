@@ -2,12 +2,18 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 
 #include "kvs.h"
 #include "constants.h"
+#include "operations.h"
 
 static struct HashTable* kvs_table = NULL;
-
+extern int concurrent_backups;
+extern int running_backups;
 
 /// Calculates a timespec from a delay in milliseconds.
 /// @param delay_ms Delay in milliseconds.
@@ -125,6 +131,29 @@ int kvs_backup(int output_fd) {
 
   return 0; // Sucesso
 }
+
+void kvs_wait_backup(const char *filename, int *backup_count) {
+      // Incrementar o contador de backups para o arquivo atual
+    (*backup_count)++;
+
+    // Aguardar até que o número de backups em execução esteja abaixo do limite
+    while (__sync_fetch_and_add(&running_backups, 0) >= concurrent_backups) {
+        waitpid(-1, NULL, 0); // Espera que algum processo filho termine
+    }
+
+    // Criar um novo processo filho para realizar o backup
+    pid_t pid = fork();
+    if (pid == 0) {
+        // Processo filho
+        perform_backup(filename, *backup_count);
+    } else if (pid > 0) {
+        // Processo pai: incrementa atomicamente o contador de backups em execução
+        __sync_fetch_and_add(&running_backups, 1);
+    } else {
+        perror("Failed to fork process for backup");
+    }
+}
+
 
 
 void kvs_wait(unsigned int delay_ms) {

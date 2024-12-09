@@ -89,6 +89,7 @@ int process_job_file(const char *filename) {
     while ((command = get_next(fd)) != EOC) {
         switch (command) {
             case CMD_WRITE:
+                //fprintf(stderr, "Executing command: CMD_WRITE\n"); // DEBUG
                 num_pairs = (size_t)parse_write(fd, keys, values, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
@@ -100,6 +101,7 @@ int process_job_file(const char *filename) {
                 break;
 
             case CMD_READ:
+                //fprintf(stderr, "Executing command: CMD_READ\n");  // DEBUG
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
@@ -111,6 +113,7 @@ int process_job_file(const char *filename) {
                 break;
 
             case CMD_DELETE:
+                //fprintf(stderr, "Executing command: CMD_DELETE\n"); // DEBUG
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
@@ -123,10 +126,12 @@ int process_job_file(const char *filename) {
                 break;
 
             case CMD_SHOW:
+                //fprintf(stderr, "Executing command: CMD_SHOW\n"); // DEBUG
                 kvs_show(output_fd);
                 break;
 
             case CMD_WAIT:
+                //fprintf(stderr, "Executing command: CMD_WAIT\n"); // DEBUG
                 if (parse_wait(fd, &delay, NULL) == -1) {
                     //dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
@@ -138,23 +143,11 @@ int process_job_file(const char *filename) {
                 break;
 
             case CMD_BACKUP:
+                //fprintf(stderr, "Executing command: CMD_BACKUP\n"); // DEBUG
                 backup_count++;
 
-                // Criar processo filho para realizar o backup
-                while (running_backups >= concurrent_backups) {
-                    waitpid(-1, NULL, 0); // Esperar por um processo filho terminar
-                }
-
-                pid_t pid = fork();
-                if (pid == 0) {
-                    // Processo filho
-                    perform_backup(filename, backup_count);
-                } else if (pid > 0) {
-                    // Processo pai
-                    __sync_fetch_and_add(&running_backups, 1); // Incrementa contador atomicamente
-                } else {
-                    perror("Failed to fork process for backup");
-                }                
+                kvs_wait_backup(filename, &backup_count);
+                             
                 
                 //if (kvs_backup()) {
                     //dprintf(output_fd, "Failed to perform backup.\n");
@@ -162,7 +155,8 @@ int process_job_file(const char *filename) {
                 break;
 
             case CMD_INVALID:
-                //dprintf(output_fd, "Invalid command. See HELP for usage\n");
+                //fprintf(stderr, "Executing command: CMD_INVALID\n"); // DEBUG
+                dprintf(output_fd, "Invalid command. See HELP for usage\n");
                 break;
 
             case CMD_HELP:
