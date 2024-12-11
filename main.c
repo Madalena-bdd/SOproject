@@ -48,12 +48,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+
     const char *dirpath = argv[1];
     concurrent_backups = atoi(argv[2]);
     MAX_THREADS = atoi(argv[3]);
 
     if (concurrent_backups <= 0 || MAX_THREADS <=0) { 
         fprintf(stderr, "Error: <concurrent_backups> must be greater than 0\n");
+        return 1;
+    }
+
+    if (kvs_init()) {
+        perror("Failed to initialize KVS");
         return 1;
     }
 
@@ -73,10 +79,7 @@ int main(int argc, char *argv[]) {
 
     //signal(SIGCHLD, handle_sigchld);  // Configura manipulador de sinal para SIGCHLD
 
-    if (kvs_init()) {
-        perror("Failed to initialize KVS");
-        return 1;
-    }
+    
     // Esperar por todos os processos filhos finalizarem
     while (running_backups > 0) {
         waitpid(-1, NULL, 0);
@@ -301,8 +304,9 @@ void *thread_for_job(void *arg) {
         if (job_data->status == 0) {
             job_data->status = 1;
             printf("Processing job file: %s\n", job_data->file_path); // Debug print
-            pthread_mutex_unlock(&file_list->mutex);
             process_job_file(job_data->file_path);
+            pthread_mutex_unlock(&file_list->mutex);
+            
         } else {
             pthread_mutex_unlock(&file_list->mutex);
         }

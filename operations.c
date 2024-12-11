@@ -50,7 +50,7 @@ int kvs_terminate() {
 int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) {
   if (kvs_table == NULL) {
     char error_message[MAX_STRING_SIZE];
-    snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
+    snprintf(error_message, MAX_STRING_SIZE, " write KVS state must be initialized\n");
     write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
@@ -68,7 +68,7 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_
 int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
   if (kvs_table == NULL) {
     char error_message[MAX_STRING_SIZE];
-    snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
+    snprintf(error_message, MAX_STRING_SIZE, " read KVS state must be initialized\n");
     write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
@@ -93,7 +93,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
   pthread_mutex_lock(&kvs_table->table_mutex);
   if (kvs_table == NULL) {
     char error_message[MAX_STRING_SIZE];
-    snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
+    snprintf(error_message, MAX_STRING_SIZE, "delete KVS state must be initialized\n");
     write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
@@ -132,7 +132,7 @@ void kvs_show(int output_fd) {
 int kvs_backup(int output_fd) {
   if (kvs_table == NULL) {
     char error_message[MAX_STRING_SIZE];
-    snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
+    snprintf(error_message, MAX_STRING_SIZE, "backup KVS state must be initialized\n");
     write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
