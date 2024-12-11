@@ -17,9 +17,82 @@
 
 #define MAX_FILES 100
 
+typedef struct Job_data {
+  int fd;
+  char *file_path;
+  int output_fd;
+  int running_backups;
+  int concurrent_backups;
+  int status; // 0 - não foi processado, 1 - já foi ou está a ser processado
+  struct Job_data *next;
+} Job_data;
+
+typedef struct {
+  Job_data* job_data;
+  int num_files;
+  pthread_mutex_t mutex;
+} File_list;
+
 int MAX_THREADS = 0; // Número máximo de threads
 int concurrent_backups = 0;
 int running_backups = 0;  // Number of backups currently running
+
+void *thread_for_job(void *arg);
+void handle_sigchld(int signo);
+void perform_backup(const char *filename, int backup_num);
+File_list *process_directory(const char *filename);
+
+int main(int argc, char *argv[]) {
+    if (argc != 4) { 
+        fprintf(stderr, "Usage: %s <directory_path> <concurrent_backups> <max_threads>\n", argv[0]);
+        return 1;
+    }
+
+    const char *dirpath = argv[1];
+    concurrent_backups = atoi(argv[2]);
+    MAX_THREADS = atoi(argv[3]);
+
+    if (concurrent_backups <= 0 || MAX_THREADS <=0) { 
+        fprintf(stderr, "Error: <concurrent_backups> must be greater than 0\n");
+        return 1;
+    }
+
+    File_list *file_list = process_directory(dirpath);
+    Job_data *job_data = file_list->job_data;
+    pthread_t threads[MAX_THREADS];
+    int num_files = file_list->num_files;
+
+    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {
+        pthread_create(&threads[i], NULL, thread_for_job, (void *)file_list);
+        job_data = job_data->next;
+    }
+
+    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {
+        pthread_join(threads[i], NULL);
+    }
+
+    //signal(SIGCHLD, handle_sigchld);  // Configura manipulador de sinal para SIGCHLD
+
+    if (kvs_init()) {
+        perror("Failed to initialize KVS");
+        return 1;
+    }
+    // Esperar por todos os processos filhos finalizarem
+    while (running_backups > 0) {
+        waitpid(-1, NULL, 0);
+    }
+    // Clear the file_list
+    Job_data *current_job = file_list->job_data;
+    while (current_job != NULL) {
+        Job_data *next_job = current_job->next;
+        free(current_job->file_path);
+        free(current_job);
+        current_job = next_job;
+    }
+    free(file_list);
+    kvs_terminate();
+    return 0;
+}
 
 // Recolher processos filhos finalizados
 void handle_sigchld(int signo) {
@@ -184,75 +257,55 @@ int process_job_file(const char *filename) {
 }
 
 // Função para processar arquivos em um diretório
-int process_directory(const char *dirpath) {
+File_list *process_directory(const char *dirpath) {
     DIR *dir = opendir(dirpath);
-    if (!dir) {
-        perror("Failed to open directory");
-        return -1;
-    }
-
     struct dirent *entry;
+
+    File_list *file_list = (File_list *)malloc(sizeof(File_list));
+    file_list->num_files = 0;
+
     while ((entry = readdir(dir)) != NULL) {
         char filepath[MAX_JOB_FILE_NAME_SIZE];
         snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, entry->d_name);
 
-        struct stat file_stat;
-        if (stat(filepath, &file_stat) == 0 && S_ISREG(file_stat.st_mode) && strstr(entry->d_name, ".job")) {
-            // Processar cada arquivo em um processo filho separado
-            pid_t pid = fork();
-            if (pid == 0) {
-                // Processo filho
-                if (process_job_file(filepath) != 0) {
-                    fprintf(stderr, "Error processing file: %s\n", filepath);
+        struct stat file_metadata;
+        if (stat(filepath, &file_metadata) == 0 && S_ISREG(file_metadata.st_mode) && strstr(entry->d_name, ".job")) {
+            Job_data *job_data = (Job_data *)malloc(sizeof(Job_data));
+            job_data->file_path = strdup(filepath);
+            job_data->running_backups = 0;
+            job_data->concurrent_backups = concurrent_backups;
+            job_data->status = 0;
+            job_data->next = NULL;
+            if (file_list->job_data == NULL) { 
+                file_list->job_data = job_data;
+            } else {
+                Job_data* current_job = file_list->job_data;
+                while (current_job->next != NULL) {
+                    current_job = current_job->next;
                 }
-                exit(0);
-            } else if (pid < 0) {
-                perror("Failed to fork process for file processing");
+                current_job->next = job_data;
+                job_data->next = NULL;
             }
+            file_list->num_files++;
         }
     }
-
-    // Esperar que todos os processos filhos terminem
-    while (wait(NULL) > 0);
-
     closedir(dir);
-    return 0;
+    return file_list;
 }
 
-
-int main(int argc, char *argv[]) {
-    if (argc != 4) { 
-        fprintf(stderr, "Usage: %s <directory_path> <concurrent_backups>\n", argv[0]);
-        return 1;
+void *thread_for_job(void *arg) {
+    File_list *file_list = (File_list *)arg;
+    Job_data *job_data = file_list->job_data;
+    for (; job_data != NULL; job_data = job_data->next) {
+        pthread_mutex_lock(&file_list->mutex);
+        if (job_data->status == 0) {
+            job_data->status = 1;
+            printf("Processing job file: %s\n", job_data->file_path); // Debug print
+            pthread_mutex_unlock(&file_list->mutex);
+            process_job_file(job_data->file_path);
+        } else {
+            pthread_mutex_unlock(&file_list->mutex);
+        }
     }
-
-    const char *dirpath = argv[1];
-
-    concurrent_backups = atoi(argv[2]);
-    MAX_THREADS = atoi(argv[3]);
-    if (concurrent_backups <= 0 || MAX_THREADS <=0) { 
-        fprintf(stderr, "Error: <concurrent_backups> must be greater than 0\n");
-        return 1;
-    }
-
-
-    signal(SIGCHLD, handle_sigchld);  // Configura manipulador de sinal para SIGCHLD
-
-    if (kvs_init()) {
-        perror("Failed to initialize KVS");
-        return 1;
-    }
-
-    if (process_directory(dirpath) != 0) {
-        kvs_terminate();
-        return 1;
-    }
-    
-    // Esperar por todos os processos filhos finalizarem
-    while (running_backups > 0) {
-        waitpid(-1, NULL, 0);
-    }
-
-    kvs_terminate();
-    return 0;
+    return NULL;
 }

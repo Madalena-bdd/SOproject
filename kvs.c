@@ -1,5 +1,6 @@
 #include "kvs.h"
 #include "string.h"
+#include <pthread.h>
 
 #include <stdlib.h>
 #include <ctype.h>
@@ -18,20 +19,21 @@ int hash(const char *key) {
     return -1; // Invalid index for non-alphabetic or number strings
 }
 
-
 struct HashTable* create_hash_table() {
   HashTable *ht = malloc(sizeof(HashTable));
   if (!ht) return NULL;
   for (int i = 0; i < TABLE_SIZE; i++) {
       ht->table[i] = NULL;
+      pthread_mutex_init(&ht->list_mutex[i], NULL);
   }
+  pthread_mutex_init(&ht->table_mutex, NULL);
   return ht;
 }
 
 int write_pair(HashTable *ht, const char *key, const char *value) {
     int index = hash(key);
     KeyNode *keyNode = ht->table[index];
-
+    pthread_mutex_lock(&ht->list_mutex[index]);
     // Search for the key node
     while (keyNode != NULL) {
         if (strcmp(keyNode->key, key) == 0) {
@@ -48,12 +50,14 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     keyNode->value = strdup(value); // Allocate memory for the value
     keyNode->next = ht->table[index]; // Link to existing nodes
     ht->table[index] = keyNode; // Place new key node at the start of the list
+    pthread_mutex_unlock(&ht->list_mutex[index]);
     return 0;
 }
 
 char* read_pair(HashTable *ht, const char *key) {
     int index = hash(key);
     KeyNode *keyNode = ht->table[index];
+    pthread_mutex_lock(&ht->list_mutex[index]);
     char* value;
 
     while (keyNode != NULL) {
@@ -63,6 +67,7 @@ char* read_pair(HashTable *ht, const char *key) {
         }
         keyNode = keyNode->next; // Move to the next node
     }
+    pthread_mutex_unlock(&ht->list_mutex[index]);
     return NULL; // Key not found
 }
 
@@ -96,6 +101,7 @@ int delete_pair(HashTable *ht, const char *key) {
 }
 
 void free_table(HashTable *ht) {
+    pthread_mutex_lock(&ht->table_mutex);
     for (int i = 0; i < TABLE_SIZE; i++) {
         KeyNode *keyNode = ht->table[i];
         while (keyNode != NULL) {
@@ -105,6 +111,9 @@ void free_table(HashTable *ht) {
             free(temp->value);
             free(temp);
         }
+        pthread_mutex_destroy(&ht->list_mutex[i]);
     }
+    pthread_mutex_unlock(&ht->table_mutex);
+    pthread_mutex_destroy(&ht->table_mutex);
     free(ht);
 }

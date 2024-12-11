@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <pthread.h>
 
 #include "kvs.h"
 #include "constants.h"
@@ -23,8 +24,10 @@ static struct timespec delay_to_timespec(unsigned int delay_ms) {
 }
 
 int kvs_init() {
-  if (kvs_table != NULL) {
-    fprintf(stderr, "KVS state has already been initialized\n");
+  if (kvs_table != NULL) {    
+    char error_message[MAX_STRING_SIZE];
+    snprintf(error_message, MAX_STRING_SIZE, "KVS state has already been initialized\n");
+    write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
 
@@ -34,7 +37,9 @@ int kvs_init() {
 
 int kvs_terminate() {
   if (kvs_table == NULL) {
-    fprintf(stderr, "KVS state must be initialized\n");
+    char error_message[MAX_STRING_SIZE];
+    snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
+    write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
 
@@ -44,13 +49,16 @@ int kvs_terminate() {
 
 int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) {
   if (kvs_table == NULL) {
-    fprintf(stderr, "KVS state must be initialized\n");
+    char error_message[MAX_STRING_SIZE];
+    snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
+    write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
-
   for (size_t i = 0; i < num_pairs; i++) {
     if (write_pair(kvs_table, keys[i], values[i]) != 0) {
-      fprintf(stderr, "Failed to write keypair (%s,%s)\n", keys[i], values[i]);
+      char error_message[MAX_STRING_SIZE];
+      snprintf(error_message, MAX_STRING_SIZE, "Failed to write keypair (%s,%s)\n", keys[i], values[i]);
+      write(STDERR_FILENO, error_message, strlen(error_message));
     }
   }
 
@@ -59,7 +67,9 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_
 
 int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
   if (kvs_table == NULL) {
-    fprintf(stderr, "KVS state must be initialized\n");
+    char error_message[MAX_STRING_SIZE];
+    snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
+    write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
 
@@ -80,8 +90,11 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
 }
 
 int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
+  pthread_mutex_lock(&kvs_table->table_mutex);
   if (kvs_table == NULL) {
-    fprintf(stderr, "KVS state must be initialized\n");
+    char error_message[MAX_STRING_SIZE];
+    snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
+    write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
   int aux = 0;
@@ -98,12 +111,13 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
   if (aux) {
     dprintf(output_fd,"]\n");
   }
-
+  pthread_mutex_unlock(&kvs_table->table_mutex);
   return 0;
 }
 
 
 void kvs_show(int output_fd) {
+  pthread_mutex_lock(&kvs_table->table_mutex);
   for (int i = 0; i < TABLE_SIZE; i++) {
     KeyNode *keyNode = kvs_table->table[i];
     while (keyNode != NULL) {
@@ -111,12 +125,15 @@ void kvs_show(int output_fd) {
       keyNode = keyNode->next;
     }
   }
+  pthread_mutex_unlock(&kvs_table->table_mutex);
 }
 
 
 int kvs_backup(int output_fd) {
   if (kvs_table == NULL) {
-    fprintf(stderr, "KVS state must be initialized\n");
+    char error_message[MAX_STRING_SIZE];
+    snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
+    write(STDERR_FILENO, error_message, strlen(error_message));
     return 1;
   }
 
