@@ -1,5 +1,16 @@
 #testar se uma linha em branco a meio do ficheiro é um EOF
+
 WRITE [(ola,adeus)(martins,bordadagua)]
+
 DELETE [ola]
 
+
 WRITE [(chega,aqui)]
+
+
+
+
+
+
+
+SHOW

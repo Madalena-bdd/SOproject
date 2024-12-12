@@ -1,16 +1,16 @@
+#include <dirent.h>
+#include <errno.h>  
+#include <fcntl.h>
 #include <limits.h>
+#include <pthread.h>
+#include <signal.h>    
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <dirent.h>
 #include <string.h>
-#include <fcntl.h>
-#include <sys/types.h>
 #include <sys/stat.h>
-#include <pthread.h>
+#include <sys/types.h>
 #include <sys/wait.h>  
-#include <signal.h>    
-#include <errno.h>  
+#include <unistd.h>
 #include "constants.h"
 #include "parser.h"
 #include "operations.h"
@@ -120,7 +120,7 @@ void perform_backup(const char *filename, int backup_num) {
     // Criar o nome do arquivo de backup com o número do backup
     char backup_filename[MAX_JOB_FILE_NAME_SIZE];
     snprintf(backup_filename, sizeof(backup_filename), "%.*s-%d.bck",
-             (int)(strlen(filename) - 4), filename, backup_num);
+        (int)(strlen(filename) - 4), filename, backup_num+1);
 
     // Abrir arquivo de backup
     int backup_fd = open(backup_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
@@ -141,8 +141,6 @@ void perform_backup(const char *filename, int backup_num) {
     close(backup_fd);
 }
 
-
-
 // Função para processar arquivos .job
 int process_job_file(const char *filename) {
     int backup_count = 0;  // Contador de backups por arquivo .job
@@ -161,8 +159,7 @@ int process_job_file(const char *filename) {
     // Criar o nome do arquivo de saída (inclui o PID para exclusividade)
     char output_filename[MAX_JOB_FILE_NAME_SIZE];
     snprintf(output_filename, sizeof(output_filename), "%.*s.out",
-         (int)(strlen(filename) - 4), filename);
-
+        (int)(strlen(filename) - 4), filename);
 
     int output_fd = open(output_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (output_fd == -1) {
@@ -171,7 +168,6 @@ int process_job_file(const char *filename) {
         return -1;
     }
 
-    
     enum Command command;
     while ((command = get_next(fd)) != EOC) {
         switch (command) {
@@ -232,8 +228,7 @@ int process_job_file(const char *filename) {
             case CMD_BACKUP:
                 //fprintf(stderr, "Executing command: CMD_BACKUP\n"); // DEBUG
                 kvs_wait_backup(filename, &backup_count);
-                             
-                
+
                 //if (kvs_backup()) {
                     //dprintf(output_fd, "Failed to perform backup.\n");
                 //}
@@ -245,7 +240,7 @@ int process_job_file(const char *filename) {
                 break;
 
             case CMD_HELP:
-                dprintf(output_fd,              
+                dprintf(output_fd,
                     "Available commands:\n"
                     "  WRITE [(key,value)(key2,value2),...]\n"
                     "  READ [key,key2,...]\n"
@@ -320,7 +315,6 @@ File_list *process_directory(const char *dirpath) {
     closedir(dir);
     return file_list;
 }
-
 
 void *thread_for_job(void *arg) {
     File_list *file_list = (File_list *)arg;
