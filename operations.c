@@ -152,27 +152,32 @@ int kvs_backup(int output_fd) {
   return 0; // Sucesso
 }
 
-void kvs_wait_backup(const char *filename, int *backup_count) {
-      // Incrementar o contador de backups para o arquivo atual
-    (*backup_count)++;
+//implementar a verificação se running_backups <= concurrent_backups num while, se não wait(NULL) !!!!!!!!!!!!
+//waitpid tem que ser antes de criar o fork  !!!!!!!!!!!!
 
-    // Aguardar até que o número de backups em execução esteja abaixo do limite
-    while (__sync_fetch_and_add(&running_backups, 0) >= concurrent_backups) {
-        waitpid(-1, NULL, 0); // Espera que algum processo filho termine
-    }
-
-    // Criar um novo processo filho para realizar o backup
+void kvs_wait_backup(const char *filename, int *backup_count) { 
     pid_t pid = fork();
+
     if (pid == 0) {
         // Processo filho
         perform_backup(filename, *backup_count);
+        exit(EXIT_SUCCESS);
     } else if (pid > 0) {
-        // Processo pai: incrementa atomicamente o contador de backups em execução
-        __sync_fetch_and_add(&running_backups, 1);
+        // Processo pai
+        (*backup_count)++;
+        __sync_fetch_and_add(&running_backups, 1);  // Incrementa atomicamente o contador
+
+        // Espera pelo processo filho
+        pid_t child_pid = waitpid(pid, NULL, 0);
+        if (child_pid > 0) {
+            __sync_fetch_and_sub(&running_backups, 1);  // Decrementa atomicamente após o sucesso
+        }
     } else {
+        // fork falhou
         perror("Failed to fork process for backup");
     }
 }
+
 
 void kvs_wait(unsigned int delay_ms) {
   struct timespec delay = delay_to_timespec(delay_ms);

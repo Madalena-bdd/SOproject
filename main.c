@@ -85,8 +85,15 @@ int main(int argc, char *argv[]) {
     
     // Esperar por todos os processos filhos finalizarem
     while (running_backups > 0) {
-        waitpid(-1, NULL, 0);
+        pid_t pid = waitpid(-1, NULL, 0);
+        if (pid > 0) {
+            __sync_fetch_and_sub(&running_backups, 1); // Decrementa atomicamente
+        } else if (pid == -1 && errno == ECHILD) {
+            // Sem mais processos filhos, pode sair do loop
+            break;
+        }
     }
+
     // Clear the file_list
     Job_data *current_job = file_list->job_data;
     while (current_job != NULL) {
