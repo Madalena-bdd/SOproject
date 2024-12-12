@@ -14,16 +14,16 @@ all: kvs
 
 # Regra para o executável principal
 kvs: main.c constants.h operations.o parser.o kvs.o
-	$(CC) $(CFLAGS) -o kvs main.c operations.o parser.o kvs.o
+	@$(CC) $(CFLAGS) -o kvs main.c operations.o parser.o kvs.o
 
 # Regra genérica para arquivos .o (com header correspondente)
 %.o: %.c %.h
-	$(CC) $(CFLAGS) -c $<
+	@$(CC) $(CFLAGS) -c $<
 
 # Limpeza de arquivos gerados
 clean:
-	rm -f *.o kvs
-	rm -rf *.dSYM
+	@rm -f *.o kvs
+	@rm -rf *.dSYM
 
 # Execução do programa
 run: kvs
