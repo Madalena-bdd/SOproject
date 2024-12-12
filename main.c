@@ -19,25 +19,25 @@
 
 typedef struct Job_data {
   int fd;
-  char *file_path;
-  int output_fd;
-  int running_backups;
-  int concurrent_backups;
-  int status; // 0 - não foi processado, 1 - já foi ou está a ser processado
-  struct Job_data *next;
+  char *file_path;                                              // Path to the .job file
+  int output_fd;                                                // File descriptor for output
+  int running_backups;                                          // Number of backups currently running for this job
+  int concurrent_backups;                                       // Maximum number of concurrent backups allowed
+  int status;                                                   // 0 - Not processed, 1 - Processed or being processed
+  struct Job_data *next;                                        // Pointer to the next job
 } Job_data;
 
 typedef struct {
-  Job_data* job_data;
-  int num_files;
-  pthread_mutex_t mutex;
+  Job_data* job_data;                                           // Pointer to the list of jobs
+  int num_files;                                                // Number of files in the directory
+  pthread_mutex_t mutex;                                        // Mutex for thread synchronization
 } File_list;
 
-int MAX_THREADS = 0; // Número máximo de threads
-int concurrent_backups = 0;
-int running_backups = 0;  // Number of backups currently running
+int MAX_THREADS = 0;                                            // Maximum number of threads, received as argument
+int concurrent_backups = 0;                                     // Maximum number of concurrent backups, received as argument
+int running_backups = 0;                                        // Number of backups currently running globally
 
-void *thread_for_job(void *arg);
+void *process_jobs_thread(void *arg);
 void handle_sigchld(int signo);
 void perform_backup(const char *filename, int backup_num);
 File_list *process_directory(const char *filename);
@@ -57,14 +57,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (kvs_init()) {
+    if (kvs_init()) {                                             // Initialize the KVS system
         perror("Failed to initialize KVS");
         return 1;
     }
 
-    signal(SIGCHLD, handle_sigchld);  // Configura manipulador de sinal para SIGCHLD
+    signal(SIGCHLD, handle_sigchld);                              // Set up SIGCHLD handler for handling child process termination
 
-    File_list *file_list = process_directory(dirpath);
+    File_list *file_list = process_directory(dirpath);            // Process the directory to build the job list
 
     if (file_list == NULL) {
         return 1;
@@ -74,56 +74,50 @@ int main(int argc, char *argv[]) {
     pthread_t threads[MAX_THREADS];
     int num_files = file_list->num_files;
 
-    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {
-        pthread_create(&threads[i], NULL, thread_for_job, (void *)file_list);
+    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {      // Create threads for processing jobs
+        pthread_create(&threads[i], NULL, process_jobs_thread, (void *)file_list);
         job_data = job_data->next;
     }
 
-    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {
+    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {      // Wait for all threads to complete
         pthread_join(threads[i], NULL);
     }
     
-    // Esperar por todos os processos filhos finalizarem
-    while (running_backups > 0) {
+    while (running_backups > 0) {                                 // Wait for all child processes (backups) to finish     
         pid_t pid = waitpid(-1, NULL, 0);
         if (pid > 0) {
-            __sync_fetch_and_sub(&running_backups, 1); // Decrementa atomicamente
+            __sync_fetch_and_sub(&running_backups, 1);            // Atomically decrement running backups counter 
         } else if (pid == -1 && errno == ECHILD) {
-            // Sem mais processos filhos, pode sair do loop
-            break;
+            break;                                                // No more child processes
         }
     }
 
-    // Clear the file_list
-    Job_data *current_job = file_list->job_data;
+    Job_data *current_job = file_list->job_data;                  // Free memory allocated for the job list
     while (current_job != NULL) {
         Job_data *next_job = current_job->next;
         free(current_job->file_path);
         free(current_job);
         current_job = next_job;
     }
+    pthread_mutex_destroy(&file_list->mutex);
     free(file_list);
-    kvs_terminate();
+    kvs_terminate();                                              // Terminate the KVS system
     return 0;
 }
 
-// Recolher processos filhos finalizados
-void handle_sigchld(int signo) {
-    (void)signo; // Marca o parametro como usado
-    while (waitpid(-1, NULL, WNOHANG) > 0) {
-        __sync_fetch_and_sub(&running_backups, 1); // Decrementa atomicamente o contador
+void handle_sigchld(int signo) {                                  // Handler for SIGCHLD signals to clean up finished child processes
+    (void)signo;                                                  // Suppress unused parameter warning
+    while (waitpid(-1, NULL, WNOHANG) > 0) {                      // Atomically decrement running backups counter
+        __sync_fetch_and_sub(&running_backups, 1); 
     }
 }
 
-// Função para realizar o backup em um processo filho
-void perform_backup(const char *filename, int backup_num) {
-    // Criar o nome do arquivo de backup com o número do backup
-    char backup_filename[MAX_JOB_FILE_NAME_SIZE];
+void perform_backup(const char *filename, int backup_num) {       // Perform a backup operation in a child process
+    char backup_filename[MAX_JOB_FILE_NAME_SIZE];                 // Generate the backup file name
     snprintf(backup_filename, sizeof(backup_filename), "%.*s-%d.bck",
         (int)(strlen(filename) - 4), filename, backup_num+1);
 
-    // Abrir arquivo de backup
-    int backup_fd = open(backup_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    int backup_fd = open(backup_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);        // Open the backup file
     if (backup_fd == -1) {
         perror("Failed to create backup file");
         return;
@@ -131,8 +125,7 @@ void perform_backup(const char *filename, int backup_num) {
         fprintf(stderr, "Backup file created: %s\n", backup_filename);
     }
 
-    // Executar a operação de backup
-    if (kvs_backup(backup_fd) != 0) {
+    if (kvs_backup(backup_fd) != 0) {                             // Execute the backup operation
         fprintf(stderr, "Failed to write backup to %s\n", backup_filename);
         close(backup_fd);
         return;
@@ -141,9 +134,8 @@ void perform_backup(const char *filename, int backup_num) {
     close(backup_fd);
 }
 
-// Função para processar arquivos .job
-int process_job_file(const char *filename) {
-    int backup_count = 0;  // Contador de backups por arquivo .job
+int process_job_file(const char *filename) {                       // Process a .job file and execute the associated commands
+    int backup_count = 0;                                          // Counter for backups performed for this job
 
     int fd = open(filename, O_RDONLY);
     if (fd == -1) {
@@ -156,8 +148,7 @@ int process_job_file(const char *filename) {
     unsigned int delay;
     size_t num_pairs;
 
-    // Criar o nome do arquivo de saída (inclui o PID para exclusividade)
-    char output_filename[MAX_JOB_FILE_NAME_SIZE];
+    char output_filename[MAX_JOB_FILE_NAME_SIZE];                   // Create the output file name
     snprintf(output_filename, sizeof(output_filename), "%.*s.out",
         (int)(strlen(filename) - 4), filename);
 
@@ -172,7 +163,6 @@ int process_job_file(const char *filename) {
     while ((command = get_next(fd)) != EOC) {
         switch (command) {
             case CMD_WRITE:
-                //fprintf(stderr, "Executing command: CMD_WRITE\n"); // DEBUG
                 num_pairs = (size_t)parse_write(fd, keys, values, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
@@ -184,7 +174,6 @@ int process_job_file(const char *filename) {
                 break;
 
             case CMD_READ:
-                //fprintf(stderr, "Executing command: CMD_READ\n");  // DEBUG
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
@@ -196,46 +185,32 @@ int process_job_file(const char *filename) {
                 break;
 
             case CMD_DELETE:
-                //fprintf(stderr, "Executing command: CMD_DELETE\n"); // DEBUG
                 num_pairs = (size_t)parse_read_delete(fd, keys, MAX_WRITE_SIZE, MAX_STRING_SIZE);
                 if (num_pairs == 0) {
                     fprintf(stderr, "Invalid command. See HELP for usage\n");
                     continue;
                 }
-                //if (kvs_delete(num_pairs, keys, output_fd)) {
-                    //dprintf(output_fd, "Failed to delete pair\n");
-                //}
                 kvs_delete(num_pairs, keys, output_fd);
                 break;
 
             case CMD_SHOW:
-                //fprintf(stderr, "Executing command: CMD_SHOW\n"); // DEBUG
                 kvs_show(output_fd);
                 break;
 
             case CMD_WAIT:
-                //fprintf(stderr, "Executing command: CMD_WAIT\n"); // DEBUG
                 if (parse_wait(fd, &delay, NULL) == -1) {
-                    //dprintf(output_fd, "Invalid command. See HELP for usage\n");
                     continue;
                 }
                 if (delay > 0) {
-                    //dprintf(output_fd, "Waiting...\n");
                     kvs_wait(delay); 
                 }
                 break;
 
             case CMD_BACKUP:
-                //fprintf(stderr, "Executing command: CMD_BACKUP\n"); // DEBUG
                 kvs_wait_backup(filename, &backup_count);
-
-                //if (kvs_backup()) {
-                    //dprintf(output_fd, "Failed to perform backup.\n");
-                //}
                 break;
 
             case CMD_INVALID:
-                //fprintf(stderr, "Executing command: CMD_INVALID\n"); // DEBUG
                 dprintf(output_fd, "Invalid command. See HELP for usage\n");
                 break;
 
@@ -264,8 +239,7 @@ int process_job_file(const char *filename) {
     return 0;
 }
 
-// Função para processar arquivos em um diretório
-File_list *process_directory(const char *dirpath) {
+File_list *process_directory(const char *dirpath) {                // Process all .job files in a given directory and create a job list
     DIR *dir = opendir(dirpath);
 
     if (dir == NULL) {
@@ -283,6 +257,8 @@ File_list *process_directory(const char *dirpath) {
     }
 
     file_list->num_files = 0;
+    file_list->job_data = NULL;
+    file_list->mutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
 
     while ((entry = readdir(dir)) != NULL) {
         char filepath[MAX_JOB_FILE_NAME_SIZE];
@@ -316,15 +292,15 @@ File_list *process_directory(const char *dirpath) {
     return file_list;
 }
 
-void *thread_for_job(void *arg) {
+void *process_jobs_thread(void *arg) {                              // FIX MEE
     File_list *file_list = (File_list *)arg;
     Job_data *job_data = file_list->job_data;
     for (; job_data != NULL; job_data = job_data->next) {
         pthread_mutex_lock(&file_list->mutex);
         if (job_data->status == 0) {
             job_data->status = 1;
-            process_job_file(job_data->file_path);
             pthread_mutex_unlock(&file_list->mutex);
+            process_job_file(job_data->file_path);
             
         } else {
             pthread_mutex_unlock(&file_list->mutex);
