@@ -1,5 +1,6 @@
 WRITE [(martins,louca)(birdadágua,linda)]
 BACKUP
 WRITE [(antunes,chica)]
+READ [martins,birdadágua,antunes]
 BACKUP
 BACKUP

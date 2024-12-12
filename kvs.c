@@ -34,11 +34,13 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     int index = hash(key);
     KeyNode *keyNode = ht->table[index];
     pthread_mutex_lock(&ht->list_mutex[index]);
+
     // Search for the key node
     while (keyNode != NULL) {
         if (strcmp(keyNode->key, key) == 0) {
             free(keyNode->value);
             keyNode->value = strdup(value);
+            pthread_mutex_unlock(&ht->list_mutex[index]);
             return 0;
         }
         keyNode = keyNode->next; // Move to the next node
@@ -58,17 +60,17 @@ char* read_pair(HashTable *ht, const char *key) {
     int index = hash(key);
     KeyNode *keyNode = ht->table[index];
     pthread_mutex_lock(&ht->list_mutex[index]);
-    char* value;
+    char* value = NULL; // Initialize value to NULL
 
     while (keyNode != NULL) {
         if (strcmp(keyNode->key, key) == 0) {
             value = strdup(keyNode->value);
-            return value; // Return copy of the value if found
+            break; // Exit the loop once the key is found
         }
         keyNode = keyNode->next; // Move to the next node
     }
     pthread_mutex_unlock(&ht->list_mutex[index]);
-    return NULL; // Key not found
+    return value; // Key not found
 }
 
 int delete_pair(HashTable *ht, const char *key) {

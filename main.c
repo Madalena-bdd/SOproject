@@ -48,7 +48,6 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-
     const char *dirpath = argv[1];
     concurrent_backups = atoi(argv[2]);
     MAX_THREADS = atoi(argv[3]);
@@ -63,7 +62,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
+    signal(SIGCHLD, handle_sigchld);  // Configura manipulador de sinal para SIGCHLD
+
     File_list *file_list = process_directory(dirpath);
+
+    if (file_list == NULL) {
+        return 1;
+    }
+
     Job_data *job_data = file_list->job_data;
     pthread_t threads[MAX_THREADS];
     int num_files = file_list->num_files;
@@ -76,9 +82,6 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < MAX_THREADS && i < num_files; i++) {
         pthread_join(threads[i], NULL);
     }
-
-    //signal(SIGCHLD, handle_sigchld);  // Configura manipulador de sinal para SIGCHLD
-
     
     // Esperar por todos os processos filhos finalizarem
     while (running_backups > 0) {
@@ -116,7 +119,7 @@ void perform_backup(const char *filename, int backup_num) {
     int backup_fd = open(backup_filename, O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (backup_fd == -1) {
         perror("Failed to create backup file");
-        exit(EXIT_FAILURE);
+        return;
     } else {
         fprintf(stderr, "Backup file created: %s\n", backup_filename);
     }
@@ -124,11 +127,11 @@ void perform_backup(const char *filename, int backup_num) {
     // Executar a operação de backup
     if (kvs_backup(backup_fd) != 0) {
         fprintf(stderr, "Failed to write backup to %s\n", backup_filename);
-        exit(EXIT_FAILURE);
+        close(backup_fd);
+        return;
     }
 
     close(backup_fd);
-    exit(EXIT_SUCCESS); // Finaliza o processo filho
 }
 
 
@@ -262,14 +265,29 @@ int process_job_file(const char *filename) {
 // Função para processar arquivos em um diretório
 File_list *process_directory(const char *dirpath) {
     DIR *dir = opendir(dirpath);
+
+    if (dir == NULL) {
+        perror("Unable to open directory");
+        return NULL;
+    }
+
     struct dirent *entry;
 
     File_list *file_list = (File_list *)malloc(sizeof(File_list));
+
+    if (file_list == NULL) {
+        perror("Failed to allocate memory for file list");
+        return NULL;
+    }
+
     file_list->num_files = 0;
 
     while ((entry = readdir(dir)) != NULL) {
         char filepath[MAX_JOB_FILE_NAME_SIZE];
-        snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, entry->d_name);
+        if ((size_t)snprintf(filepath, sizeof(filepath), "%s/%s", dirpath, entry->d_name) >= sizeof(filepath)) {
+            fprintf(stderr, "Error: File path is too long: %s/%s\n", dirpath, entry->d_name);
+            continue;
+        }
 
         struct stat file_metadata;
         if (stat(filepath, &file_metadata) == 0 && S_ISREG(file_metadata.st_mode) && strstr(entry->d_name, ".job")) {
@@ -296,6 +314,7 @@ File_list *process_directory(const char *dirpath) {
     return file_list;
 }
 
+
 void *thread_for_job(void *arg) {
     File_list *file_list = (File_list *)arg;
     Job_data *job_data = file_list->job_data;
@@ -303,7 +322,6 @@ void *thread_for_job(void *arg) {
         pthread_mutex_lock(&file_list->mutex);
         if (job_data->status == 0) {
             job_data->status = 1;
-            printf("Processing job file: %s\n", job_data->file_path); // Debug print
             process_job_file(job_data->file_path);
             pthread_mutex_unlock(&file_list->mutex);
             

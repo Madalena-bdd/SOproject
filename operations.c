@@ -91,10 +91,13 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
 
 int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
   pthread_mutex_lock(&kvs_table->table_mutex);
+
   if (kvs_table == NULL) {
     char error_message[MAX_STRING_SIZE];
     snprintf(error_message, MAX_STRING_SIZE, "delete KVS state must be initialized\n");
     write(STDERR_FILENO, error_message, strlen(error_message));
+
+    pthread_mutex_unlock(&kvs_table->table_mutex); 
     return 1;
   }
   int aux = 0;
@@ -170,7 +173,6 @@ void kvs_wait_backup(const char *filename, int *backup_count) {
         perror("Failed to fork process for backup");
     }
 }
-
 
 void kvs_wait(unsigned int delay_ms) {
   struct timespec delay = delay_to_timespec(delay_ms);
