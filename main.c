@@ -20,7 +20,7 @@
 typedef struct Job_data {
   int fd;
   char *file_path;                                              // Path to the .job file
-  int output_fd;                                                // File descriptor for output
+  int output_fd;                                                // File descriptor for the output
   int running_backups;                                          // Number of backups currently running for this job
   int concurrent_backups;                                       // Maximum number of concurrent backups allowed
   int status;                                                   // 0 - Not processed, 1 - Processed or being processed
@@ -57,7 +57,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    if (kvs_init()) {                                             // Initialize the KVS system
+    if (kvs_init()) {                                             // Initializes the KVS system
         perror("Failed to initialize KVS");
         return 1;
     }
@@ -292,18 +292,18 @@ File_list *process_directory(const char *dirpath) {                // Process al
     return file_list;
 }
 
-void *process_jobs_thread(void *arg) {                              // FIX MEE
+void *process_jobs_thread(void *arg) {                              // Process the job list using threads, assigning a thread to each job
     File_list *file_list = (File_list *)arg;
     Job_data *job_data = file_list->job_data;
     for (; job_data != NULL; job_data = job_data->next) {
         pthread_mutex_lock(&file_list->mutex);
-        if (job_data->status == 0) {
+        if (job_data->status == 0) {                               // Process the job file if it has not been processed yet
             job_data->status = 1;
             pthread_mutex_unlock(&file_list->mutex);
             process_job_file(job_data->file_path);
             
         } else {
-            pthread_mutex_unlock(&file_list->mutex);
+            pthread_mutex_unlock(&file_list->mutex);               // Skip the job file if it has already been processed
         }
     }
     return NULL;

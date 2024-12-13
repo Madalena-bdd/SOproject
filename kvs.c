@@ -16,7 +16,7 @@ int hash(const char *key) {
     } else if (firstLetter >= '0' && firstLetter <= '9') {
         return firstLetter - '0';
     }
-    return -1; // Invalid index for non-alphabetic or number strings
+    return -1;  // Invalid index for non-alphabetic or number strings
 }
 
 struct HashTable* create_hash_table() {
@@ -35,23 +35,21 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     KeyNode *keyNode = ht->table[index];
     pthread_mutex_lock(&ht->list_mutex[index]);
 
-    // Search for the key node
-    while (keyNode != NULL) {
+    while (keyNode != NULL) {                       // Search for the key node
         if (strcmp(keyNode->key, key) == 0) {
             free(keyNode->value);
             keyNode->value = strdup(value);
             pthread_mutex_unlock(&ht->list_mutex[index]);
             return 0;
         }
-        keyNode = keyNode->next; // Move to the next node
+        keyNode = keyNode->next;                    // Move to the next node
     }
 
-    // Key not found, create a new key node
-    keyNode = malloc(sizeof(KeyNode));
-    keyNode->key = strdup(key); // Allocate memory for the key
-    keyNode->value = strdup(value); // Allocate memory for the value
-    keyNode->next = ht->table[index]; // Link to existing nodes
-    ht->table[index] = keyNode; // Place new key node at the start of the list
+    keyNode = malloc(sizeof(KeyNode));               // Key not found, create a new key node
+    keyNode->key = strdup(key);                     // Allocate memory for the key
+    keyNode->value = strdup(value);                // Allocate memory for the value
+    keyNode->next = ht->table[index];             // Link to existing nodes
+    ht->table[index] = keyNode;                  // Place new key node at the start of the list
     pthread_mutex_unlock(&ht->list_mutex[index]);
     return 0;
 }
@@ -60,17 +58,17 @@ char* read_pair(HashTable *ht, const char *key) {
     int index = hash(key);
     KeyNode *keyNode = ht->table[index];
     pthread_mutex_lock(&ht->list_mutex[index]);
-    char* value = NULL; // Initialize value to NULL
+    char* value = NULL;                         // Initialize value to NULL
 
     while (keyNode != NULL) {
         if (strcmp(keyNode->key, key) == 0) {
             value = strdup(keyNode->value);
-            break; // Exit the loop once the key is found
+            break;                             // Exit the loop once the key is found
         }
-        keyNode = keyNode->next; // Move to the next node
+        keyNode = keyNode->next;               // Move to the next node
     }
     pthread_mutex_unlock(&ht->list_mutex[index]);
-    return value; // Key not found
+    return value;                              // Key not found
 }
 
 int delete_pair(HashTable *ht, const char *key) {
@@ -78,11 +76,9 @@ int delete_pair(HashTable *ht, const char *key) {
     KeyNode *keyNode = ht->table[index];
     KeyNode *prevNode = NULL;
 
-    // Search for the key node
-    while (keyNode != NULL) {
+    while (keyNode != NULL) {                   // Search for the key node
         if (strcmp(keyNode->key, key) == 0) {
-            // Key found; delete this node
-            if (prevNode == NULL) {
+            if (prevNode == NULL) {             // Key found; delete this node
                 // Node to delete is the first node in the list
                 ht->table[index] = keyNode->next; // Update the table to point to the next node
             } else {
@@ -92,11 +88,11 @@ int delete_pair(HashTable *ht, const char *key) {
             // Free the memory allocated for the key and value
             free(keyNode->key);
             free(keyNode->value);
-            free(keyNode); // Free the key node itself
-            return 0; // Exit the function
+            free(keyNode);                  // Free the key node itself
+            return 0;                       // Exit the function
         }
-        prevNode = keyNode; // Move prevNode to current node
-        keyNode = keyNode->next; // Move to the next node
+        prevNode = keyNode;                 // Move prevNode to current node
+        keyNode = keyNode->next;            // Move to the next node
     }
     
     return 1;

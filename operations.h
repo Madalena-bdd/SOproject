@@ -28,6 +28,7 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd);
 /// Deletes key value pairs from the KVS.
 /// @param num_pairs Number of pairs to read.
 /// @param keys Array of keys' strings.
+/// @param fd File descriptor where the status or result of deletion will be written.
 /// @return 0 if the pairs were deleted successfully, 1 otherwise.
 int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd);
 
@@ -36,14 +37,19 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd);
 void kvs_show(int output_fd);
 
 /// Creates a backup of the KVS state and stores it in the correspondent
-/// backup file
+/// @param backup_fd File descriptor to which the backup will be written.
 /// @return 0 if the backup was successful, 1 otherwise.
 int kvs_backup(int backup_fd);
 
 /// Waits for the last backup to be called.
+/// @param filename The name of the file.
+/// @param backup_count A pointer to the backup count variable.
 void kvs_wait_backup(const char *filename, int *backup_count);
 
+
 /// Performs a backup of the KVS state.
+/// @param filename The name of the file.
+/// @param backup_num Backup number to be performed
 void perform_backup(const char *filename, int backup_num);
 
 /// Waits for a given amount of time.

@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <dirent.h>  // Para manipulação de diretórios
-#include <fcntl.h>    // Para open() e O_RDONLY
-#include <stdio.h>    // Para perror() e snprintf()
+#include <dirent.h>       // For directory manipulation
+#include <fcntl.h>       // For open() and O_RDONLY
+#include <stdio.h>       // For perror() and snprintf()
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -292,8 +292,7 @@ int parse_wait(int fd, unsigned int *delay, unsigned int *thread_id) {
     }
 }
 
-// Função para processar arquivos .job em um diretório
-void process_job_files(const char *dir_path) {
+void process_job_files(const char *dir_path) {                // Process all .job files in a given directory
     DIR *dir = opendir(dir_path);
     struct dirent *entry;
 
@@ -303,15 +302,12 @@ void process_job_files(const char *dir_path) {
     }
 
     while ((entry = readdir(dir)) != NULL) {
-        // Construir o caminho completo do arquivo
-        char file_path[PATH_MAX];
+        char file_path[PATH_MAX];                              // Path to the file
         snprintf(file_path, sizeof(file_path), "%s/%s", dir_path, entry->d_name);
 
-        // Verificar se o ficheiro é do user e tem a extensão .job
-        struct stat file_stat;
+        struct stat file_stat;                                  // Check if the file belongs to the user and has the .job extension
         if (stat(file_path, &file_stat) == 0 && S_ISREG(file_stat.st_mode) && strstr(entry->d_name, ".job") != NULL) {
-            // Abrir o arquivo .job
-            int fd = open(file_path, O_RDONLY);
+            int fd = open(file_path, O_RDONLY);                 // Open the file
             if (fd == -1) {
                 perror("Unable to open file");
                 continue;

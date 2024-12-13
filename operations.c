@@ -23,7 +23,8 @@ static struct timespec delay_to_timespec(unsigned int delay_ms) {
   return (struct timespec){delay_ms / 1000, (delay_ms % 1000) * 1000000};
 }
 
-int kvs_init() {
+// Initializes the key-value store (KVS)
+int kvs_init() {                                                 
     if (kvs_table != NULL) {    
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, "KVS state has already been initialized\n");
@@ -34,7 +35,8 @@ int kvs_init() {
     return kvs_table == NULL;
 }
 
-int kvs_terminate() {
+// Terminates the key-value store (KVS)
+int kvs_terminate() {                                            
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
@@ -45,7 +47,8 @@ int kvs_terminate() {
     return 0;
 }
 
-int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) {
+// Writes one or more key-value pairs to the KVS
+int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) { 
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, " write KVS state must be initialized\n");
@@ -62,7 +65,8 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_
     return 0;
 }
 
-int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
+// Reads one or more key-value pairs from the KVS
+int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {                 
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, " read KVS state must be initialized\n");
@@ -70,15 +74,15 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
         return 1;
     }
 
-    qsort(keys, num_pairs, sizeof(keys[0]), (int (*)(const void*, const void*)) strcmp);   // Ordenar as chaves alfabeticamente
+    qsort(keys, num_pairs, sizeof(keys[0]), (int (*)(const void*, const void*)) strcmp);      // Sort the keys alphabetically
 
     dprintf(output_fd, "[");
     for (size_t i = 0; i < num_pairs; i++) {
         char* result = read_pair(kvs_table, keys[i]);
         if (result == NULL) {
-            dprintf(output_fd,"(%s,KVSERROR)", keys[i]);  // Quando a chave não é encontrada
+            dprintf(output_fd,"(%s,KVSERROR)", keys[i]);                                      // When the key is not found
         } else {
-            dprintf(output_fd,"(%s,%s)", keys[i], result);  // Quando a chave é encontrada
+            dprintf(output_fd,"(%s,%s)", keys[i], result);                                   // When the key is found
         }
         free(result);
     }
@@ -86,7 +90,8 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
     return 0;
 }
 
-int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
+// Deletes one or more key-value pairs from the KVS
+int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {             
   pthread_mutex_lock(&kvs_table->table_mutex);
 
     if (kvs_table == NULL) {
@@ -104,7 +109,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
                 dprintf(output_fd,"[");
                 aux = 1;
             }
-            dprintf(output_fd,"(%s,KVSMISSING)", keys[i]);
+            dprintf(output_fd,"(%s,KVSMISSING)", keys[i]);                               // When the key is not found
         }
     }
     if (aux) {
@@ -115,7 +120,8 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
 }
 
 
-void kvs_show(int output_fd) {
+// Writes the state of the KVS
+void kvs_show(int output_fd) {                                                              
     pthread_mutex_lock(&kvs_table->table_mutex);
     for (int i = 0; i < TABLE_SIZE; i++) {
         KeyNode *keyNode = kvs_table->table[i];
@@ -127,27 +133,27 @@ void kvs_show(int output_fd) {
     pthread_mutex_unlock(&kvs_table->table_mutex);
 }
 
-
-int kvs_backup(int output_fd) {
+// Creates a backup of the KVS state
+int kvs_backup(int output_fd) {                                                             
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, "backup KVS state must be initialized\n");
         write(STDERR_FILENO, error_message, strlen(error_message));
         return 1;
     }
-
-    // Iterar sobre os elementos da tabela e escrevê-los no output_fd
-    for (int i = 0; i < TABLE_SIZE; i++) {
+ 
+    for (int i = 0; i < TABLE_SIZE; i++) {                                                // Iterate over the elements of the table and writes them
         KeyNode *keyNode = kvs_table->table[i];
         while (keyNode != NULL) {
             dprintf(output_fd, "(%s, %s)\n", keyNode->key, keyNode->value);
             keyNode = keyNode->next;
         }
     }
-    return 0; // Sucesso
+    return 0;                                                                             // Backup was successful   
 }
 
-void kvs_wait_backup(const char *filename, int *backup_count) { 
+// Waits for the last backup to be called
+void kvs_wait_backup(const char *filename, int *backup_count) {                          
     while(1){
         if (running_backups <= concurrent_backups){
             break;
@@ -157,26 +163,22 @@ void kvs_wait_backup(const char *filename, int *backup_count) {
     pid_t pid = fork();
 
     if (pid == 0) {
-        // Processo filho
-        perform_backup(filename, *backup_count);
+        perform_backup(filename, *backup_count);                                        // Child process 
         exit(EXIT_SUCCESS);
     } else if (pid > 0) {
-        // Processo pai
-        (*backup_count)++;
-        __sync_fetch_and_add(&running_backups, 1);  // Incrementa atomicamente o contador
+        (*backup_count)++;                                                              // Parent process
+        __sync_fetch_and_add(&running_backups, 1);                                      // Atomically increment the counter
 
-        // Espera pelo processo filho
-        pid_t child_pid = waitpid(pid, NULL, 0);
+        pid_t child_pid = waitpid(pid, NULL, 0);                                        // Wait for the child process to finish
         if (child_pid > 0) {
-            __sync_fetch_and_sub(&running_backups, 1);  // Decrementa atomicamente após o sucesso
+            __sync_fetch_and_sub(&running_backups, 1);                                  // Atomically decrement after success
         }
     } else {
-    // fork falhou
-    perror("Failed to fork process for backup");
+    perror("Failed to fork process for backup");                                       // Error handling    
     }
 }
 
-void kvs_wait(unsigned int delay_ms) {
+void kvs_wait(unsigned int delay_ms) {                                                 // Waits for a given amount of time
     struct timespec delay = delay_to_timespec(delay_ms);
     nanosleep(&delay, NULL);
 }
