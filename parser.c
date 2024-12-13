@@ -12,6 +12,7 @@
 
 #include "constants.h"
 
+// Reads a string from the file descriptor until a delimiter is found or the buffer is full.
 static int read_string(int fd, char *buffer, size_t max) {
     ssize_t bytes_read;
     char ch;
@@ -19,7 +20,7 @@ static int read_string(int fd, char *buffer, size_t max) {
     int value = -1;
 
     while (i < max) {
-        bytes_read = read(fd, &ch, 1);
+        bytes_read = read(fd, &ch, 1);                // Read a single character from the file descriptor
 
         if (bytes_read <= 0) {
             return -1;
@@ -41,30 +42,31 @@ static int read_string(int fd, char *buffer, size_t max) {
             value = 2;
             break;
         }
-        buffer[i++] = ch;
+        buffer[i++] = ch;                        // Store the character in the buffer
     }
-    buffer[i] = '\0';
+    buffer[i] = '\0';                           // Null-terminate the string
     return value;
 }
 
+// Reads an unsigned integer from the file descriptor.
 static int read_uint(int fd, unsigned int *value, char *next) {
-    char buf[16];
+    char buf[16];   
     int i = 0;
-    while (1) {
+    while (1) {                                 // Read characters until a non-digit character is found
         if (read(fd, buf + i, 1) == 0) {
             *next = '\0';
             break;
         }
         *next = buf[i];
 
-        if (buf[i] > '9' || buf[i] < '0') {
+        if (buf[i] > '9' || buf[i] < '0') {     // Check if the character is a digit
             buf[i] = '\0';
             break;
         }
         i++;
     }
 
-    unsigned long ul = strtoul(buf, NULL, 10);
+    unsigned long ul = strtoul(buf, NULL, 10);  // Convert the string to an unsigned long
 
     if (ul > UINT_MAX) {
         return 1;
@@ -165,6 +167,7 @@ enum Command get_next(int fd) {
     }
 }
 
+// Parses a key-value pair from the file descriptor.
 int parse_pair(int fd, char *key, char *value) {
     if (read_string(fd, key, MAX_STRING_SIZE) != 0) {
         cleanup(fd);
@@ -179,6 +182,7 @@ int parse_pair(int fd, char *key, char *value) {
     return 1;
 }
 
+// Parses a WRITE command from the file descriptor.
 size_t parse_write(int fd, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE], size_t max_pairs, size_t max_string_size) {
     char ch;
 
@@ -192,7 +196,7 @@ size_t parse_write(int fd, char keys[][MAX_STRING_SIZE], char values[][MAX_STRIN
         return 0;
     }
 
-    size_t num_pairs = 0;
+    size_t num_pairs = 0;                            // Number of key-value pairs
     char key[max_string_size];
     char value[max_string_size];
     while (num_pairs < max_pairs) {
@@ -201,8 +205,8 @@ size_t parse_write(int fd, char keys[][MAX_STRING_SIZE], char values[][MAX_STRIN
             return 0;
         }
 
-        strcpy(keys[num_pairs], key);
-        strcpy(values[num_pairs++], value);
+        strcpy(keys[num_pairs], key);               // Copy the key and value to the arrays
+        strcpy(values[num_pairs++], value);         // Increment the number of key-value pairs
 
         if (read(fd, &ch, 1) != 1 || (ch != '(' && ch != ']')) {
             cleanup(fd);
@@ -227,6 +231,7 @@ size_t parse_write(int fd, char keys[][MAX_STRING_SIZE], char values[][MAX_STRIN
     return num_pairs;
 }
 
+// Parses a READ or DELETE command from the file descriptor.
 size_t parse_read_delete(int fd, char keys[][MAX_STRING_SIZE], size_t max_keys, size_t max_string_size) {
     char ch;
 
@@ -261,13 +266,14 @@ size_t parse_read_delete(int fd, char keys[][MAX_STRING_SIZE], size_t max_keys, 
         return 0;
     }
 
-    return num_keys;
+    return num_keys;                                  // Return the number of keys parsed
 }
 
+// Parses a WAIT command from the file descriptor.
 int parse_wait(int fd, unsigned int *delay, unsigned int *thread_id) {
     char ch;
 
-    if (read_uint(fd, delay, &ch) != 0) {
+    if (read_uint(fd, delay, &ch) != 0) {           // Read the delay
         cleanup(fd);
         return -1;
     }

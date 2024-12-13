@@ -42,6 +42,12 @@ void handle_sigchld(int signo);
 void perform_backup(const char *filename, int backup_num);
 File_list *process_directory(const char *filename);
 
+
+
+/// Main function for the program.
+/// @param argc The number of command line arguments.
+/// @param argv An array of strings containing the command line arguments.
+/// @return 0 if the program executed successfully, 1 otherwise.
 int main(int argc, char *argv[]) {
     if (argc != 4) { 
         fprintf(stderr, "Usage: %s <directory_path> <concurrent_backups> <max_threads>\n", argv[0]);
@@ -104,6 +110,7 @@ int main(int argc, char *argv[]) {
     kvs_terminate();                                              // Terminate the KVS system
     return 0;
 }
+
 
 void handle_sigchld(int signo) {                                  // Handler for SIGCHLD signals to clean up finished child processes
     (void)signo;                                                  // Suppress unused parameter warning

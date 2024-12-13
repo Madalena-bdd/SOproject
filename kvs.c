@@ -18,8 +18,9 @@ int hash(const char *key) {
     return -1;                                                  // Invalid index for non-alphabetic or number strings
 }
 
+// Creates a new hash table.
 struct HashTable* create_hash_table() {
-  HashTable *ht = malloc(sizeof(HashTable));
+  HashTable *ht = malloc(sizeof(HashTable));                  // Allocate memory for the hash table
   if (!ht) return NULL;
   for (int i = 0; i < TABLE_SIZE; i++) {
       ht->table[i] = NULL;
@@ -97,16 +98,17 @@ int delete_pair(HashTable *ht, const char *key) {
     return 1;
 }
 
+// Frees the hash table.
 void free_table(HashTable *ht) {
     pthread_mutex_lock(&ht->table_mutex);
-    for (int i = 0; i < TABLE_SIZE; i++) {
+    for (int i = 0; i < TABLE_SIZE; i++) {               // Iterate over the table
         KeyNode *keyNode = ht->table[i];
-        while (keyNode != NULL) {
+        while (keyNode != NULL) {                       // Iterate over the linked list
             KeyNode *temp = keyNode;
             keyNode = keyNode->next;
-            free(temp->key);
-            free(temp->value);
-            free(temp);
+            free(temp->key);                          // Free the key
+            free(temp->value);                       // Free the value
+            free(temp);                             // Free the node
         }
         pthread_mutex_destroy(&ht->list_mutex[i]);
     }
