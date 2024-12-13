@@ -82,7 +82,7 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
         if (result == NULL) {
             dprintf(output_fd,"(%s,KVSERROR)", keys[i]);                                      // When the key is not found
         } else {
-            dprintf(output_fd,"(%s,%s)", keys[i], result);                                   // When the key is found
+            dprintf(output_fd,"(%s,%s)", keys[i], result);                                    // When the key is found
         }
         free(result);
     }
@@ -109,7 +109,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
                 dprintf(output_fd,"[");
                 aux = 1;
             }
-            dprintf(output_fd,"(%s,KVSMISSING)", keys[i]);                               // When the key is not found
+            dprintf(output_fd,"(%s,KVSMISSING)", keys[i]);                                   // When the key is not found
         }
     }
     if (aux) {
@@ -142,14 +142,14 @@ int kvs_backup(int output_fd) {
         return 1;
     }
  
-    for (int i = 0; i < TABLE_SIZE; i++) {                                                // Iterate over the elements of the table and writes them
+    for (int i = 0; i < TABLE_SIZE; i++) {                                                   // Iterate over the elements of the table and writes them
         KeyNode *keyNode = kvs_table->table[i];
         while (keyNode != NULL) {
             dprintf(output_fd, "(%s, %s)\n", keyNode->key, keyNode->value);
             keyNode = keyNode->next;
         }
     }
-    return 0;                                                                             // Backup was successful   
+    return 0;                                                                                // Backup was successful   
 }
 
 // Waits for the last backup to be called
@@ -163,22 +163,22 @@ void kvs_wait_backup(const char *filename, int *backup_count) {
     pid_t pid = fork();
 
     if (pid == 0) {
-        perform_backup(filename, *backup_count);                                        // Child process 
+        perform_backup(filename, *backup_count);                                             // Child process 
         exit(EXIT_SUCCESS);
     } else if (pid > 0) {
-        (*backup_count)++;                                                              // Parent process
-        __sync_fetch_and_add(&running_backups, 1);                                      // Atomically increment the counter
+        (*backup_count)++;                                                                   // Parent process
+        __sync_fetch_and_add(&running_backups, 1);                                           // Atomically increment the counter
 
-        pid_t child_pid = waitpid(pid, NULL, 0);                                        // Wait for the child process to finish
+        pid_t child_pid = waitpid(pid, NULL, 0);                                             // Wait for the child process to finish
         if (child_pid > 0) {
-            __sync_fetch_and_sub(&running_backups, 1);                                  // Atomically decrement after success
+            __sync_fetch_and_sub(&running_backups, 1);                                       // Atomically decrement after success
         }
     } else {
-    perror("Failed to fork process for backup");                                       // Error handling    
+    perror("Failed to fork process for backup");                                             // Error handling    
     }
 }
 
-void kvs_wait(unsigned int delay_ms) {                                                 // Waits for a given amount of time
-    struct timespec delay = delay_to_timespec(delay_ms);
+void kvs_wait(unsigned int delay_ms) {                                                       // Waits for a given amount of time
+    struct timespec delay = delay_to_timespec(delay_ms); 
     nanosleep(&delay, NULL);
 }

@@ -4,9 +4,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <dirent.h>       // For directory manipulation
-#include <fcntl.h>       // For open() and O_RDONLY
-#include <stdio.h>       // For perror() and snprintf()
+#include <dirent.h>                                     // For directory manipulation
+#include <fcntl.h>                                      // For open() and O_RDONLY
+#include <stdio.h>                                      // For perror() and snprintf()
 #include <sys/types.h>
 #include <sys/stat.h>
 
@@ -292,7 +292,7 @@ int parse_wait(int fd, unsigned int *delay, unsigned int *thread_id) {
     }
 }
 
-void process_job_files(const char *dir_path) {                // Process all .job files in a given directory
+void process_job_files(const char *dir_path) {                  // Process all .job files in a given directory
     DIR *dir = opendir(dir_path);
     struct dirent *entry;
 
@@ -302,7 +302,7 @@ void process_job_files(const char *dir_path) {                // Process all .jo
     }
 
     while ((entry = readdir(dir)) != NULL) {
-        char file_path[PATH_MAX];                              // Path to the file
+        char file_path[PATH_MAX];                               // Path to the file
         snprintf(file_path, sizeof(file_path), "%s/%s", dir_path, entry->d_name);
 
         struct stat file_stat;                                  // Check if the file belongs to the user and has the .job extension

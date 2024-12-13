@@ -125,7 +125,7 @@ void perform_backup(const char *filename, int backup_num) {       // Perform a b
         fprintf(stderr, "Backup file created: %s\n", backup_filename);
     }
 
-    if (kvs_backup(backup_fd) != 0) {                             // Execute the backup operation
+    if (kvs_backup(backup_fd) != 0) {                                                 // Execute the backup operation
         fprintf(stderr, "Failed to write backup to %s\n", backup_filename);
         close(backup_fd);
         return;
@@ -297,13 +297,13 @@ void *process_jobs_thread(void *arg) {                              // Process t
     Job_data *job_data = file_list->job_data;
     for (; job_data != NULL; job_data = job_data->next) {
         pthread_mutex_lock(&file_list->mutex);
-        if (job_data->status == 0) {                               // Process the job file if it has not been processed yet
+        if (job_data->status == 0) {                                // Process the job file if it has not been processed yet
             job_data->status = 1;
             pthread_mutex_unlock(&file_list->mutex);
             process_job_file(job_data->file_path);
             
         } else {
-            pthread_mutex_unlock(&file_list->mutex);               // Skip the job file if it has already been processed
+            pthread_mutex_unlock(&file_list->mutex);                // Skip the job file if it has already been processed
         }
     }
     return NULL;
