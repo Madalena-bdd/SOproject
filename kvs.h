@@ -22,10 +22,6 @@ typedef struct HashTable {
 /// @return Newly created hash table, NULL on failure
 struct HashTable *create_hash_table();
 
-/// Hash function to determine the index of the key in the hash table.
-/// @param key Key to be hashed.
-int hash(const char *key);
-
 /// Appends a new key value pair to the hash table.
 /// @param ht Hash table to be modified.
 /// @param key Key of the pair to be written.

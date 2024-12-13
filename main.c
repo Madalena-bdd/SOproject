@@ -1,12 +1,3 @@
-/**
- * A program implementing a key-value store (KVS).
- * This file contains the main function of that program.
- * @file main.c
- * @authors:
- *  Madalena Bordadágua - 110382
- *  Madalena Martins - 110698
- */
-
 #include <dirent.h>
 #include <errno.h>  
 #include <fcntl.h>
@@ -42,17 +33,12 @@ typedef struct {
   pthread_mutex_t mutex;                                        // Mutex for thread synchronization
 } File_list;
 
-typedef struct {
-    Job_data *job_data;
-    File_list *file_list;
-} Thread_data;
-
 int MAX_THREADS = 0;                                            // Maximum number of threads, received as argument
 int concurrent_backups = 0;                                     // Maximum number of concurrent backups, received as argument
 int running_backups = 0;                                        // Number of backups currently running globally
 
 void *process_jobs_thread(void *arg);
-void handle_sigchld();
+void handle_sigchld(int signo);
 void perform_backup(const char *filename, int backup_num);
 File_list *process_directory(const char *filename);
 
@@ -72,8 +58,6 @@ int main(int argc, char *argv[]) {
     concurrent_backups = atoi(argv[2]);
     MAX_THREADS = atoi(argv[3]);
 
-    //verificação se os argumentos são inteiros & sigma (isdigit)
-    
     if (concurrent_backups <= 0 || MAX_THREADS <=0) { 
         fprintf(stderr, "Error: <concurrent_backups> must be greater than 0\n");
         return 1;
@@ -93,14 +77,11 @@ int main(int argc, char *argv[]) {
     }
 
     Job_data *job_data = file_list->job_data;
-    Thread_data thread_data[MAX_THREADS];
     pthread_t threads[MAX_THREADS];
     int num_files = file_list->num_files;
 
     for (int i = 0; i < MAX_THREADS && i < num_files; i++) {      // Create threads for processing jobs
-        thread_data[i].file_list = file_list;
-        thread_data[i].job_data = job_data;
-        pthread_create(&threads[i], NULL, process_jobs_thread, (void *)&thread_data[i]);
+        pthread_create(&threads[i], NULL, process_jobs_thread, (void *)file_list);
         job_data = job_data->next;
     }
 
@@ -108,7 +89,6 @@ int main(int argc, char *argv[]) {
         pthread_join(threads[i], NULL);
     }
     
-    /*
     while (running_backups > 0) {                                 // Wait for all child processes (backups) to finish     
         pid_t pid = waitpid(-1, NULL, 0);
         if (pid > 0) {
@@ -116,11 +96,7 @@ int main(int argc, char *argv[]) {
         } else if (pid == -1 && errno == ECHILD) {
             break;                                                // No more child processes
         }
-    }*/
-
-   while (wait(NULL) > 0) {
-    sleep(1);
-   };
+    }
 
     Job_data *current_job = file_list->job_data;                  // Free memory allocated for the job list
     while (current_job != NULL) {
@@ -136,7 +112,8 @@ int main(int argc, char *argv[]) {
 }
 
 
-void handle_sigchld() {                                  // Handler for SIGCHLD signals to clean up finished child processes
+void handle_sigchld(int signo) {                                  // Handler for SIGCHLD signals to clean up finished child processes
+    (void)signo;                                                  // Suppress unused parameter warning
     while (waitpid(-1, NULL, WNOHANG) > 0) {                      // Atomically decrement running backups counter
         __sync_fetch_and_sub(&running_backups, 1); 
     }
@@ -288,7 +265,7 @@ File_list *process_directory(const char *dirpath) {                // Process al
 
     file_list->num_files = 0;
     file_list->job_data = NULL;
-    pthread_mutex_init(&file_list->mutex, NULL);
+    file_list->mutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
 
     while ((entry = readdir(dir)) != NULL) {
         char filepath[MAX_JOB_FILE_NAME_SIZE];
@@ -323,15 +300,15 @@ File_list *process_directory(const char *dirpath) {                // Process al
 }
 
 void *process_jobs_thread(void *arg) {                              // Process the job list using threads, assigning a thread to each job
-    Thread_data *thread_data = (Thread_data *)arg;
-    File_list *file_list = thread_data->file_list;
-    Job_data *job_data = thread_data->job_data;
+    File_list *file_list = (File_list *)arg;
+    Job_data *job_data = file_list->job_data;
     for (; job_data != NULL; job_data = job_data->next) {
         pthread_mutex_lock(&file_list->mutex);
         if (job_data->status == 0) {                                // Process the job file if it has not been processed yet
             job_data->status = 1;
             pthread_mutex_unlock(&file_list->mutex);
             process_job_file(job_data->file_path);
+            
         } else {
             pthread_mutex_unlock(&file_list->mutex);                // Skip the job file if it has already been processed
         }

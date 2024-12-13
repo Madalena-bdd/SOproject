@@ -33,11 +33,13 @@ struct HashTable* create_hash_table() {
 int write_pair(HashTable *ht, const char *key, const char *value) {
     int index = hash(key);
     KeyNode *keyNode = ht->table[index];
+    pthread_mutex_lock(&ht->list_mutex[index]);
 
     while (keyNode != NULL) {                                   // Search for the key node
         if (strcmp(keyNode->key, key) == 0) {   
             free(keyNode->value);
             keyNode->value = strdup(value);
+            pthread_mutex_unlock(&ht->list_mutex[index]);
             return 0;
         }
         keyNode = keyNode->next;                               // Move to the next node
@@ -48,12 +50,14 @@ int write_pair(HashTable *ht, const char *key, const char *value) {
     keyNode->value = strdup(value);                            // Allocate memory for the value
     keyNode->next = ht->table[index];                          // Link to existing nodes
     ht->table[index] = keyNode;                                // Place new key node at the start of the list
+    pthread_mutex_unlock(&ht->list_mutex[index]);
     return 0;
 }
 
 char* read_pair(HashTable *ht, const char *key) {
     int index = hash(key);
     KeyNode *keyNode = ht->table[index];
+    pthread_mutex_lock(&ht->list_mutex[index]);
     char* value = NULL;                                        // Initialize value to NULL
 
     while (keyNode != NULL) {
@@ -63,6 +67,7 @@ char* read_pair(HashTable *ht, const char *key) {
         }
         keyNode = keyNode->next;                               // Move to the next node
     }
+    pthread_mutex_unlock(&ht->list_mutex[index]);
     return value;                                              // Key not found
 }
 

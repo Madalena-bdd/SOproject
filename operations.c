@@ -47,55 +47,8 @@ int kvs_terminate() {
     return 0;
 }
 
-void mutex_hash_lock(char keys[][MAX_STRING_SIZE], size_t num_pairs) {
-    int* hash_values = (int*)malloc(num_pairs * sizeof(int));
-    for (size_t i = 0; i < num_pairs; i++) {
-        int index = hash(keys[i]);
-        hash_values[i] = index;
-    }
-    qsort(hash_values, num_pairs, sizeof(int), (int (*)(const void*, const void*)) strcmp);
-    size_t unique_count = 0;
-    for (size_t i = 1; i < num_pairs; i++) {
-        if (hash_values[i] != hash_values[unique_count]) {
-            unique_count++;
-            hash_values[unique_count] = hash_values[i];
-        }
-    }
-    
-    hash_values = (int*)realloc(hash_values, (unique_count + 1) * sizeof(int));
-
-    for (size_t i = 0; i <= unique_count; i++) {
-        pthread_mutex_lock(&kvs_table->list_mutex[hash_values[i]]);
-    }
-    free(hash_values);
-}
-
-void mutex_hash_unlock(char keys[][MAX_STRING_SIZE], size_t num_pairs) {
-    int* hash_values = (int*)malloc(num_pairs * sizeof(int));
-    for (size_t i = 0; i < num_pairs; i++) {
-        int index = hash(keys[i]);
-        hash_values[i] = index;
-    }
-    qsort(hash_values, num_pairs, sizeof(int), (int (*)(const void*, const void*)) strcmp);
-    size_t unique_count = 0;
-    for (size_t i = 1; i < num_pairs; i++) {
-        if (hash_values[i] != hash_values[unique_count]) {
-            unique_count++;
-            hash_values[unique_count] = hash_values[i];
-        }
-    }
-    
-    hash_values = (int*)realloc(hash_values, unique_count * sizeof(int));
-
-    for (size_t i = 0; i < unique_count; i++) {
-        pthread_mutex_unlock(&kvs_table->list_mutex[hash_values[i]]);
-    }
-    free(hash_values);
-}
-
 // Writes one or more key-value pairs to the KVS
 int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) { 
-    mutex_hash_lock(keys, num_pairs);
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, " write KVS state must be initialized\n");
@@ -109,19 +62,19 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_
             write(STDERR_FILENO, error_message, strlen(error_message));
         }
     }
-    mutex_hash_unlock(keys, num_pairs);
     return 0;
 }
 
 // Reads one or more key-value pairs from the KVS
-int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {   
-    mutex_hash_lock(keys, num_pairs);              
+int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {                 
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, " read KVS state must be initialized\n");
         write(STDERR_FILENO, error_message, strlen(error_message));
         return 1;
     }
+
+    qsort(keys, num_pairs, sizeof(keys[0]), (int (*)(const void*, const void*)) strcmp);      // Sort the keys alphabetically
 
     dprintf(output_fd, "[");
     for (size_t i = 0; i < num_pairs; i++) {
@@ -134,18 +87,18 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
         free(result);
     }
     dprintf(output_fd, "]\n");
-    mutex_hash_unlock(keys, num_pairs);
     return 0;
 }
 
 // Deletes one or more key-value pairs from the KVS
 int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {             
-    mutex_hash_lock(keys, num_pairs);
+  pthread_mutex_lock(&kvs_table->table_mutex);
 
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, "delete KVS state must be initialized\n");
         write(STDERR_FILENO, error_message, strlen(error_message));
+        pthread_mutex_unlock(&kvs_table->table_mutex); 
         return 1;
     }
     int aux = 0;
@@ -162,22 +115,22 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
     if (aux) {
         dprintf(output_fd,"]\n");
     }
-    mutex_hash_unlock(keys, num_pairs);
+    pthread_mutex_unlock(&kvs_table->table_mutex);
     return 0;
 }
 
 
 // Writes the state of the KVS
-void kvs_show(int output_fd) {                                                                  
+void kvs_show(int output_fd) {                                                              
+    pthread_mutex_lock(&kvs_table->table_mutex);
     for (int i = 0; i < TABLE_SIZE; i++) {
-        pthread_mutex_lock(&kvs_table->list_mutex[i]);
         KeyNode *keyNode = kvs_table->table[i];
         while (keyNode != NULL) {
             dprintf(output_fd, "(%s, %s)\n", keyNode->key, keyNode->value);
             keyNode = keyNode->next;
         }
-        pthread_mutex_unlock(&kvs_table->list_mutex[i]);
     }
+    pthread_mutex_unlock(&kvs_table->table_mutex);
 }
 
 // Creates a backup of the KVS state
@@ -188,7 +141,7 @@ int kvs_backup(int output_fd) {
         write(STDERR_FILENO, error_message, strlen(error_message));
         return 1;
     }
-
+ 
     for (int i = 0; i < TABLE_SIZE; i++) {                                                   // Iterate over the elements of the table and writes them
         KeyNode *keyNode = kvs_table->table[i];
         while (keyNode != NULL) {
@@ -202,7 +155,7 @@ int kvs_backup(int output_fd) {
 // Waits for the last backup to be called
 void kvs_wait_backup(const char *filename, int *backup_count) {                          
     while(1){
-        if (running_backups <= concurrent_backups) {
+        if (running_backups <= concurrent_backups){
             break;
         }
         wait(NULL);
@@ -211,7 +164,7 @@ void kvs_wait_backup(const char *filename, int *backup_count) {
 
     if (pid == 0) {
         perform_backup(filename, *backup_count);                                             // Child process 
-        _exit(EXIT_SUCCESS);
+        exit(EXIT_SUCCESS);
     } else if (pid > 0) {
         (*backup_count)++;                                                                   // Parent process
         __sync_fetch_and_add(&running_backups, 1);                                           // Atomically increment the counter
