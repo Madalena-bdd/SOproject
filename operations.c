@@ -1,15 +1,15 @@
+#include <fcntl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <time.h>
 #include <sys/types.h>
-#include <unistd.h>
 #include <sys/wait.h>
-#include <fcntl.h>
-#include <pthread.h>
+#include <time.h>
+#include <unistd.h>
 
-#include "kvs.h"
 #include "constants.h"
+#include "kvs.h"
 #include "operations.h"
 
 static struct HashTable* kvs_table = NULL;
@@ -24,7 +24,7 @@ static struct timespec delay_to_timespec(unsigned int delay_ms) {
 }
 
 // Initializes the key-value store (KVS)
-int kvs_init() {                                                 
+int kvs_init() {
     if (kvs_table != NULL) {    
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, "KVS state has already been initialized\n");
@@ -36,7 +36,7 @@ int kvs_init() {
 }
 
 // Terminates the key-value store (KVS)
-int kvs_terminate() {                                            
+int kvs_terminate() {
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, "KVS state must be initialized\n");
@@ -48,7 +48,7 @@ int kvs_terminate() {
 }
 
 // Writes one or more key-value pairs to the KVS
-int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) { 
+int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_STRING_SIZE]) {
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, " write KVS state must be initialized\n");
@@ -66,7 +66,7 @@ int kvs_write(size_t num_pairs, char keys[][MAX_STRING_SIZE], char values[][MAX_
 }
 
 // Reads one or more key-value pairs from the KVS
-int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {                 
+int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, " read KVS state must be initialized\n");
@@ -74,15 +74,15 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
         return 1;
     }
 
-    qsort(keys, num_pairs, sizeof(keys[0]), (int (*)(const void*, const void*)) strcmp);      // Sort the keys alphabetically
+    qsort(keys, num_pairs, sizeof(keys[0]), (int (*)(const void*, const void*)) strcmp);        // Sort the keys alphabetically
 
     dprintf(output_fd, "[");
     for (size_t i = 0; i < num_pairs; i++) {
         char* result = read_pair(kvs_table, keys[i]);
         if (result == NULL) {
-            dprintf(output_fd,"(%s,KVSERROR)", keys[i]);                                      // When the key is not found
+            dprintf(output_fd,"(%s,KVSERROR)", keys[i]);                                        // When the key is not found
         } else {
-            dprintf(output_fd,"(%s,%s)", keys[i], result);                                    // When the key is found
+            dprintf(output_fd,"(%s,%s)", keys[i], result);                                      // When the key is found
         }
         free(result);
     }
@@ -91,7 +91,7 @@ int kvs_read(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
 }
 
 // Deletes one or more key-value pairs from the KVS
-int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {             
+int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
   pthread_mutex_lock(&kvs_table->table_mutex);
 
     if (kvs_table == NULL) {
@@ -109,7 +109,7 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
                 dprintf(output_fd,"[");
                 aux = 1;
             }
-            dprintf(output_fd,"(%s,KVSMISSING)", keys[i]);                                   // When the key is not found
+            dprintf(output_fd,"(%s,KVSMISSING)", keys[i]);                                      // When the key is not found
         }
     }
     if (aux) {
@@ -119,9 +119,8 @@ int kvs_delete(size_t num_pairs, char keys[][MAX_STRING_SIZE], int output_fd) {
     return 0;
 }
 
-
 // Writes the state of the KVS
-void kvs_show(int output_fd) {                                                              
+void kvs_show(int output_fd) {
     pthread_mutex_lock(&kvs_table->table_mutex);
     for (int i = 0; i < TABLE_SIZE; i++) {
         KeyNode *keyNode = kvs_table->table[i];
@@ -134,26 +133,26 @@ void kvs_show(int output_fd) {
 }
 
 // Creates a backup of the KVS state
-int kvs_backup(int output_fd) {                                                             
+int kvs_backup(int output_fd) {
     if (kvs_table == NULL) {
         char error_message[MAX_STRING_SIZE];
         snprintf(error_message, MAX_STRING_SIZE, "backup KVS state must be initialized\n");
         write(STDERR_FILENO, error_message, strlen(error_message));
         return 1;
     }
- 
-    for (int i = 0; i < TABLE_SIZE; i++) {                                                   // Iterate over the elements of the table and writes them
+
+    for (int i = 0; i < TABLE_SIZE; i++) {                                                      // Iterate over the elements of the table and writes them
         KeyNode *keyNode = kvs_table->table[i];
         while (keyNode != NULL) {
             dprintf(output_fd, "(%s, %s)\n", keyNode->key, keyNode->value);
             keyNode = keyNode->next;
         }
     }
-    return 0;                                                                                // Backup was successful   
+    return 0;                                                                                   // Backup was successful
 }
 
 // Waits for the last backup to be called
-void kvs_wait_backup(const char *filename, int *backup_count) {                          
+void kvs_wait_backup(const char *filename, int *backup_count) { 
     while(1){
         if (running_backups <= concurrent_backups){
             break;
@@ -163,22 +162,22 @@ void kvs_wait_backup(const char *filename, int *backup_count) {
     pid_t pid = fork();
 
     if (pid == 0) {
-        perform_backup(filename, *backup_count);                                             // Child process 
+        perform_backup(filename, *backup_count);                                                // Child process 
         exit(EXIT_SUCCESS);
     } else if (pid > 0) {
-        (*backup_count)++;                                                                   // Parent process
-        __sync_fetch_and_add(&running_backups, 1);                                           // Atomically increment the counter
+        (*backup_count)++;                                                                      // Parent process
+        __sync_fetch_and_add(&running_backups, 1);                                              // Atomically increment the counter
 
-        pid_t child_pid = waitpid(pid, NULL, 0);                                             // Wait for the child process to finish
+        pid_t child_pid = waitpid(pid, NULL, 0);                                                // Wait for the child process to finish
         if (child_pid > 0) {
-            __sync_fetch_and_sub(&running_backups, 1);                                       // Atomically decrement after success
+            __sync_fetch_and_sub(&running_backups, 1);                                          // Atomically decrement after success
         }
     } else {
-    perror("Failed to fork process for backup");                                             // Error handling    
+        perror("Failed to fork process for backup");                                            // Error handling
     }
 }
 
-void kvs_wait(unsigned int delay_ms) {                                                       // Waits for a given amount of time
-    struct timespec delay = delay_to_timespec(delay_ms); 
+void kvs_wait(unsigned int delay_ms) {                                                          // Waits for a given amount of time
+    struct timespec delay = delay_to_timespec(delay_ms);
     nanosleep(&delay, NULL);
 }

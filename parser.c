@@ -1,14 +1,14 @@
 #include "parser.h"
 
+#include <dirent.h>                                                                 // For directory manipulation
+#include <fcntl.h>                                                                  // For open() and O_RDONLY
 #include <limits.h>
+#include <stdio.h>                                                                  // For perror() and snprintf()
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <dirent.h>                                     // For directory manipulation
-#include <fcntl.h>                                      // For open() and O_RDONLY
-#include <stdio.h>                                      // For perror() and snprintf()
-#include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "constants.h"
 
@@ -20,7 +20,7 @@ static int read_string(int fd, char *buffer, size_t max) {
     int value = -1;
 
     while (i < max) {
-        bytes_read = read(fd, &ch, 1);                // Read a single character from the file descriptor
+        bytes_read = read(fd, &ch, 1);                                              // Read a single character from the file descriptor
 
         if (bytes_read <= 0) {
             return -1;
@@ -42,31 +42,31 @@ static int read_string(int fd, char *buffer, size_t max) {
             value = 2;
             break;
         }
-        buffer[i++] = ch;                        // Store the character in the buffer
+        buffer[i++] = ch;                                                           // Store the character in the buffer
     }
-    buffer[i] = '\0';                           // Null-terminate the string
+    buffer[i] = '\0';                                                               // Null-terminate the string
     return value;
 }
 
 // Reads an unsigned integer from the file descriptor.
 static int read_uint(int fd, unsigned int *value, char *next) {
-    char buf[16];   
+    char buf[16];
     int i = 0;
-    while (1) {                                 // Read characters until a non-digit character is found
+    while (1) {                                                                     // Read characters until a non-digit character is found
         if (read(fd, buf + i, 1) == 0) {
             *next = '\0';
             break;
         }
         *next = buf[i];
 
-        if (buf[i] > '9' || buf[i] < '0') {     // Check if the character is a digit
+        if (buf[i] > '9' || buf[i] < '0') {                                         // Check if the character is a digit
             buf[i] = '\0';
             break;
         }
         i++;
     }
 
-    unsigned long ul = strtoul(buf, NULL, 10);  // Convert the string to an unsigned long
+    unsigned long ul = strtoul(buf, NULL, 10);                                      // Convert the string to an unsigned long
 
     if (ul > UINT_MAX) {
         return 1;
@@ -196,7 +196,7 @@ size_t parse_write(int fd, char keys[][MAX_STRING_SIZE], char values[][MAX_STRIN
         return 0;
     }
 
-    size_t num_pairs = 0;                            // Number of key-value pairs
+    size_t num_pairs = 0;                                                           // Number of key-value pairs
     char key[max_string_size];
     char value[max_string_size];
     while (num_pairs < max_pairs) {
@@ -205,8 +205,8 @@ size_t parse_write(int fd, char keys[][MAX_STRING_SIZE], char values[][MAX_STRIN
             return 0;
         }
 
-        strcpy(keys[num_pairs], key);               // Copy the key and value to the arrays
-        strcpy(values[num_pairs++], value);         // Increment the number of key-value pairs
+        strcpy(keys[num_pairs], key);                                               // Copy the key and value to the arrays
+        strcpy(values[num_pairs++], value);                                         // Increment the number of key-value pairs
 
         if (read(fd, &ch, 1) != 1 || (ch != '(' && ch != ']')) {
             cleanup(fd);
@@ -266,14 +266,14 @@ size_t parse_read_delete(int fd, char keys[][MAX_STRING_SIZE], size_t max_keys, 
         return 0;
     }
 
-    return num_keys;                                  // Return the number of keys parsed
+    return num_keys;                                                                // Return the number of keys parsed
 }
 
 // Parses a WAIT command from the file descriptor.
 int parse_wait(int fd, unsigned int *delay, unsigned int *thread_id) {
     char ch;
 
-    if (read_uint(fd, delay, &ch) != 0) {           // Read the delay
+    if (read_uint(fd, delay, &ch) != 0) {                                           // Read the delay
         cleanup(fd);
         return -1;
     }
@@ -298,7 +298,7 @@ int parse_wait(int fd, unsigned int *delay, unsigned int *thread_id) {
     }
 }
 
-void process_job_files(const char *dir_path) {                  // Process all .job files in a given directory
+void process_job_files(const char *dir_path) {                                      // Process all .job files in a given directory
     DIR *dir = opendir(dir_path);
     struct dirent *entry;
 
@@ -308,12 +308,12 @@ void process_job_files(const char *dir_path) {                  // Process all .
     }
 
     while ((entry = readdir(dir)) != NULL) {
-        char file_path[PATH_MAX];                               // Path to the file
+        char file_path[PATH_MAX];                                                   // Path to the file
         snprintf(file_path, sizeof(file_path), "%s/%s", dir_path, entry->d_name);
 
-        struct stat file_stat;                                  // Check if the file belongs to the user and has the .job extension
+        struct stat file_stat;                                                      // Check if the file belongs to the user and has the .job extension
         if (stat(file_path, &file_stat) == 0 && S_ISREG(file_stat.st_mode) && strstr(entry->d_name, ".job") != NULL) {
-            int fd = open(file_path, O_RDONLY);                 // Open the file
+            int fd = open(file_path, O_RDONLY);                                     // Open the file
             if (fd == -1) {
                 perror("Unable to open file");
                 continue;

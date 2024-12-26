@@ -3,7 +3,8 @@ CC = gcc
 # Flags de compilação
 CFLAGS = -g -std=c17 -D_POSIX_C_SOURCE=200809L \
 		 -Wall -Werror -Wextra \
-		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused
+		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused \
+		 -pthread
 
 ifneq ($(shell uname -s),Darwin) # if not MacOS
 	CFLAGS += -fmax-errors=5
@@ -14,7 +15,7 @@ all: kvs
 
 # Regra para o executável principal
 kvs: main.c constants.h operations.o parser.o kvs.o
-	@$(CC) $(CFLAGS) -o kvs main.c operations.o parser.o kvs.o
+	@$(CC) $(CFLAGS) -o kvs main.c operations.o parser.o kvs.o -lpthread
 
 # Regra genérica para arquivos .o (com header correspondente)
 %.o: %.c %.h
