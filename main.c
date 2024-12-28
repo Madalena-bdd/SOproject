@@ -46,25 +46,43 @@ typedef struct {
 int MAX_THREADS = 0;                                                                // Maximum number of threads
 int concurrent_backups = 0;                                                         // Maximum number of concurrent backups, received as argument
 int running_backups = 0;                                                            // Number of backups currently running globally
+//volatiless?
+char *registration_fifo_name_global; // Variável global para o nome do FIFO
 
 void *process_jobs_thread(void *arg);
 void handle_sigchld(int signo);
 void perform_backup(const char *filename, int backup_num);
 File_list *process_directory(const char *filename);
 
+
+// Função para limpar o FIFO ao sair
+void cleanup_fifo() {
+    if (access(registration_fifo_name_global, F_OK) != -1) { // Verifica se o FIFO existe
+        if (unlink(registration_fifo_name_global) == -1) {
+            perror("Failed to unlink FIFO");
+        } else {
+            fprintf(stdout, "FIFO %s removed\n", registration_fifo_name_global);
+        }
+    } else {
+        fprintf(stdout, "FIFO %s does not exist, skipping removal.\n", registration_fifo_name_global);
+    }
+}
+
+
 /// Main function for the program.
 /// @param argc The number of command line arguments.
 /// @param argv An array of strings containing the command line arguments.
 /// @return 0 if the program executed successfully, 1 otherwise.
 int main(int argc, char *argv[]) {
-    if (argc != 4) { 
-        fprintf(stderr, "Usage: %s <directory_path> <concurrent_backups> <max_threads>\n", argv[0]);
+    if (argc != 5) { 
+        fprintf(stderr, "Usage: %s <directory_path> <concurrent_backups> <max_threads> <registration_fifo_name>\n", argv[0]);
         return 1;
     }
 
     const char *dirpath = argv[1];
     concurrent_backups = atoi(argv[2]);
     MAX_THREADS = atoi(argv[3]);
+    registration_fifo_name_global = argv[4]; // FIFO name
 
     for (int i = 0; argv[2][i] != '\0'; i++) {
         if (!isdigit(argv[2][i])) {
@@ -92,9 +110,27 @@ int main(int argc, char *argv[]) {
 
     signal(SIGCHLD, handle_sigchld);                                                // Set up SIGCHLD handler for handling child process termination
 
-    File_list *file_list = process_directory(dirpath);                              // Process the directory to build the job list
+    // Register cleanup for FIFO
+    if (mkfifo(registration_fifo_name_global, 0666) == -1) {
+        if (errno != EEXIST) {                                                      // Ignore error if FIFO already exists
+            perror("Failed to create registration FIFO");
+            return 1;
+        }
+    }
+    fprintf(stdout, "Registration FIFO created: %s\n", registration_fifo_name_global);
 
+    // Registra a função de limpeza do FIFO para ser chamada ao sair
+    atexit(cleanup_fifo);
+
+    int registration_fifo_fd = open(registration_fifo_name_global, O_RDONLY | O_NONBLOCK); // Open FIFO for reading
+    if (registration_fifo_fd == -1) {
+        perror("Failed to open registration FIFO");
+        return 1;
+    }
+
+    File_list *file_list = process_directory(dirpath);                              // Process the directory to build the job list
     if (file_list == NULL) {
+        close(registration_fifo_fd);
         return 1;
     }
 
@@ -107,8 +143,30 @@ int main(int argc, char *argv[]) {
         job_data = job_data->next;
     }
 
+    // Monitor the registration FIFO for client connections
+    int terminate = 0;
+    while (!terminate) {
+        char client_request[PIPE_BUF];
+        ssize_t bytes_read = read(registration_fifo_fd, client_request, sizeof(client_request) - 1);
+        if (bytes_read > 0) {
+            client_request[bytes_read] = '\0';  // Null-terminate the request
+            if (strcmp(client_request, "EXIT") == 0) {
+                fprintf(stdout, "Termination request received.\n");
+                terminate = 1;
+            } else {
+                fprintf(stdout, "Received client connection request: %s\n", client_request);
+                // Process the client request here
+            }
+        } else if (bytes_read == 0) {
+            // No data available
+            usleep(100000);  // Sleep briefly to avoid high CPU usage in the loop
+        } else {
+            perror("Error reading from FIFO");
+        }
+    }
+
     for (int i = 0; i < MAX_THREADS && i < num_files; i++) {                        // Wait for all threads to complete
-        pthread_join(threads[i], NULL);
+        pthread_join(threads[i], NULL); 
     }
     
     while (running_backups > 0) {                                                   // Wait for all child processes (backups) to finish
@@ -128,6 +186,7 @@ int main(int argc, char *argv[]) {
         current_job = next_job;
     }
     free(file_list);
+    close(registration_fifo_fd);                                             
     kvs_terminate();                                                                // Terminate the KVS system
     return 0;
 }
