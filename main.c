@@ -44,8 +44,8 @@ typedef struct {
 } File_list;
 
 int MAX_THREADS = 0;                                                                // Maximum number of threads
-int concurrent_backups = 0;                                                         // Maximum number of concurrent backups, received as argument
-int running_backups = 0;                                                            // Number of backups currently running globally
+volatile int concurrent_backups = 0;                                                         // Maximum number of concurrent backups, received as argument
+volatile int running_backups = 0;                                                            // Number of backups currently running globally
 //volatiless?
 char *registration_fifo_name_global; // Variável global para o nome do FIFO
 
@@ -53,6 +53,7 @@ void *process_jobs_thread(void *arg);
 void handle_sigchld(int signo);
 void perform_backup(const char *filename, int backup_num);
 File_list *process_directory(const char *filename);
+
 
 
 // Função para limpar o FIFO ao sair
@@ -67,6 +68,16 @@ void cleanup_fifo() {
         fprintf(stdout, "FIFO %s does not exist, skipping removal.\n", registration_fifo_name_global);
     }
 }
+
+// Função para tratar sinais
+void signal_handler(int signo) {
+    if (signo == SIGINT || signo == SIGTERM) {
+        fprintf(stdout, "Signal %d received, cleaning up and exiting.\n", signo);
+        cleanup_fifo();  // Remove o FIFO principal
+        exit(0);         // Termina o programa de forma segura
+    }
+}
+
 
 
 /// Main function for the program.
@@ -84,6 +95,7 @@ int main(int argc, char *argv[]) {
     MAX_THREADS = atoi(argv[3]);
     registration_fifo_name_global = argv[4]; // FIFO name
 
+
     for (int i = 0; argv[2][i] != '\0'; i++) {
         if (!isdigit(argv[2][i])) {
             fprintf(stderr, "Error: <concurrent_backups> must be a number\n");
@@ -98,7 +110,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    if (concurrent_backups <= 0 || MAX_THREADS <=0) { 
+    if (concurrent_backups <= 0 || MAX_THREADS <= 0) { 
         fprintf(stderr, "Error: <concurrent_backups> must be greater than 0\n");
         return 1;
     }
@@ -119,9 +131,6 @@ int main(int argc, char *argv[]) {
     }
     fprintf(stdout, "Registration FIFO created: %s\n", registration_fifo_name_global);
 
-    // Registra a função de limpeza do FIFO para ser chamada ao sair
-    atexit(cleanup_fifo);
-
     int registration_fifo_fd = open(registration_fifo_name_global, O_RDONLY | O_NONBLOCK); // Open FIFO for reading
     if (registration_fifo_fd == -1) {
         perror("Failed to open registration FIFO");
@@ -138,9 +147,37 @@ int main(int argc, char *argv[]) {
     pthread_t threads[MAX_THREADS];
     int num_files = file_list->num_files;
 
-    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {                        // Create threads for processing jobs
+    // Create threads for processing jobs
+    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {  
         pthread_create(&threads[i], NULL, process_jobs_thread, (void *)file_list);
         job_data = job_data->next;
+    }
+
+    // Wait for all threads to complete
+    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {  
+        pthread_join(threads[i], NULL); 
+    }
+
+    // Registra a função de limpeza do FIFO para ser chamada ao sair
+    atexit(cleanup_fifo);
+
+    // Wait for all child processes (backups) to finish
+    while (running_backups > 0) {                                                   // Wait for all child processes (backups) to finish
+        pid_t pid = waitpid(-1, NULL, 0);
+        if (pid > 0) {
+            __sync_fetch_and_sub(&running_backups, 1);                              // Atomically decrement running backups counter
+        } else if (pid == -1 && errno == ECHILD) {
+            break;                                                                  // No more child processes
+        }
+    }
+
+    // Free memory allocated for the file list
+    Job_data *current_job = file_list->job_data;  
+    while (current_job != NULL) {
+        Job_data *next_job = current_job->next;
+        free(current_job->file_path);
+        free(current_job);
+        current_job = next_job;
     }
 
     // Monitor the registration FIFO for client connections
@@ -165,28 +202,8 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    for (int i = 0; i < MAX_THREADS && i < num_files; i++) {                        // Wait for all threads to complete
-        pthread_join(threads[i], NULL); 
-    }
-    
-    while (running_backups > 0) {                                                   // Wait for all child processes (backups) to finish
-        pid_t pid = waitpid(-1, NULL, 0);
-        if (pid > 0) {
-            __sync_fetch_and_sub(&running_backups, 1);                              // Atomically decrement running backups counter
-        } else if (pid == -1 && errno == ECHILD) {
-            break;                                                                  // No more child processes
-        }
-    }
-
-    Job_data *current_job = file_list->job_data;                                    // Free memory allocated for the file list
-    while (current_job != NULL) {
-        Job_data *next_job = current_job->next;
-        free(current_job->file_path);
-        free(current_job);
-        current_job = next_job;
-    }
     free(file_list);
-    close(registration_fifo_fd);                                             
+    close(registration_fifo_fd);  
     kvs_terminate();                                                                // Terminate the KVS system
     return 0;
 }
@@ -197,6 +214,7 @@ void handle_sigchld(int signo) {                                                
         __sync_fetch_and_sub(&running_backups, 1);                                  // Atomically decrement running backups counter
     }
 }
+
 
 void perform_backup(const char *filename, int backup_num) {                         // Perform a backup operation in a child process
     char backup_filename[MAX_JOB_FILE_NAME_SIZE];                                   // Generate the backup file name
