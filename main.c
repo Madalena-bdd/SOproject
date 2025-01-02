@@ -77,6 +77,8 @@ void cleanup_fifo() {
 /// @param argv An array of strings containing the command line arguments.
 /// @return 0 if the program executed successfully, 1 otherwise.
 int main(int argc, char *argv[]) {
+
+
     if (argc != 5) { 
         fprintf(stderr, "Usage: %s <directory_path> <concurrent_backups> <max_threads> <registration_fifo_name>\n", argv[0]);
         return 1;
@@ -172,7 +174,7 @@ int main(int argc, char *argv[]) {
         current_job = next_job;
     }
 
-    // Monitor the registration FIFO for client connections
+    /*// Monitor the registration FIFO for client connections //FIXX MEEE
     int terminate = 0;
     while (!terminate) {
         char client_request[PIPE_BUF];
@@ -193,7 +195,7 @@ int main(int argc, char *argv[]) {
             perror("Error reading from FIFO");
         }
     }
-
+*/
     free(file_list);
     close(registration_fifo_fd);  
     kvs_terminate();                                                                // Terminate the KVS system
@@ -334,60 +336,6 @@ int process_job_file(const char *filename) {                                    
     close(output_fd);
     return 0;
 }
-
-// Implementação do cliente
-/*void run_client(const char *client_id, const char *register_pipe_path) {
-    char req_pipe_path[MAX_STRING_SIZE] = "/tmp/req";
-    char resp_pipe_path[MAX_STRING_SIZE] = "/tmp/resp";
-    char notif_pipe_path[MAX_STRING_SIZE] = "/tmp/notif";
-
-    strncat(req_pipe_path, client_id, strlen(client_id));
-    strncat(resp_pipe_path, client_id, strlen(client_id));
-    strncat(notif_pipe_path, client_id, strlen(client_id));
-
-    mkfifo(req_pipe_path, 0666);
-    mkfifo(resp_pipe_path, 0666);
-    mkfifo(notif_pipe_path, 0666);
-
-    if (kvs_connect(req_pipe_path, resp_pipe_path, notif_pipe_path, register_pipe_path) != 0) {
-        fprintf(stderr, "Failed to connect to server\n");
-        return;
-    }
-
-    char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
-    unsigned int delay_ms;
-
-    while (1) {
-        switch (get_next(STDIN_FILENO)) {
-            case CMD_DISCONNECT:
-                kvs_disconnect();
-                unlink(req_pipe_path);
-                unlink(resp_pipe_path);
-                unlink(notif_pipe_path);
-                printf("Disconnected from server\n");
-                return;
-
-            case CMD_SUBSCRIBE:
-                parse_list(STDIN_FILENO, keys, 1, MAX_STRING_SIZE);
-                kvs_subscribe(keys[0]);
-                break;
-
-            case CMD_UNSUBSCRIBE:
-                parse_list(STDIN_FILENO, keys, 1, MAX_STRING_SIZE);
-                kvs_unsubscribe(keys[0]);
-                break;
-
-            case CMD_DELAY:
-                parse_delay(STDIN_FILENO, &delay_ms);
-                delay(delay_ms);
-                break;
-
-            default:
-                fprintf(stderr, "Invalid command\n");
-                break;
-        }
-    }
-}*/
 
 void handle_client_session(int client_fifo_fd) {
     char client_command[PIPE_BUF];

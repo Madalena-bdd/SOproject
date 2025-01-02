@@ -11,11 +11,16 @@ ifneq ($(shell uname -s),Darwin) # if not MacOS
 endif
 
 # Alvo principal
-all: kvs
+all: kvs client
 
 # Regra para o executável principal
 kvs: main.c constants.h operations.o parser.o kvs.o
 	@$(CC) $(CFLAGS) -o kvs main.c operations.o parser.o kvs.o -lpthread
+
+# Regra para o executável do cliente
+client/client: client/main.c parser.o
+	@$(CC) $(CFLAGS) -o client/client client/main.c parser.o -lpthread
+
 
 # Regra genérica para arquivos .o (com header correspondente)
 %.o: %.c %.h
@@ -26,9 +31,13 @@ clean:
 	@rm -f *.o kvs
 	@rm -rf *.dSYM
 
-# Execução do programa
+# Execução do servidor
 run: kvs
 	@./kvs
+
+# Execução do cliente
+run-client: client
+	@./client
 
 # Formatação do código
 format:
