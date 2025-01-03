@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
-  // TODO open pipes
+  // TO DO open pipes
 
   while (1) {
     switch (get_next(STDIN_FILENO)) {
@@ -38,7 +38,7 @@ int main(int argc, char* argv[]) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
         }*/
-        // TODO: end notifications thread
+        // TO DO: end notifications thread
         printf("Disconnected from server\n");
         return 0;
 

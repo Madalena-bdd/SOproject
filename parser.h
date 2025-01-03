@@ -14,12 +14,6 @@ enum Command {
     CMD_HELP,
     CMD_EMPTY,
     CMD_INVALID,
-    /*CMD_DISCONNECT,
-    CMD_SUBSCRIBE,
-    CMD_UNSUBSCRIBE,
-    CMD_DELAY,
-    CMD_EMPTY,
-    CMD_INVALID,*/
     EOC  // End of commands
 };
 
