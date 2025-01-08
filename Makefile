@@ -1,45 +1,34 @@
 CC = gcc
 
-# Flags de compilação
-CFLAGS = -g -std=c17 -D_POSIX_C_SOURCE=200809L \
-		 -Wall -Werror -Wextra \
+# Para mais informações sobre as flags de warning, consulte a informação adicional no lab_ferramentas
+CFLAGS = -g -std=c17 -D_POSIX_C_SOURCE=200809L -I. \
+		 -Wall -Wextra -Werror \
 		 -Wcast-align -Wconversion -Wfloat-equal -Wformat=2 -Wnull-dereference -Wshadow -Wsign-conversion -Wswitch-enum -Wundef -Wunreachable-code -Wunused \
-		 -pthread
+		 -pthread 
+# -fsanitize=address -fsanitize=undefined 
+
 
 ifneq ($(shell uname -s),Darwin) # if not MacOS
 	CFLAGS += -fmax-errors=5
 endif
 
-# Alvo principal
-all: kvs client
+all: src/server/kvs src/client/client
 
-# Regra para o executável principal
-kvs: main.c constants.h operations.o parser.o kvs.o
-	@$(CC) $(CFLAGS) -o kvs main.c operations.o parser.o kvs.o -lpthread
-
-# Regra para o executável do cliente
-client/client: client/main.c parser.o
-	@$(CC) $(CFLAGS) -o client/client client/main.c parser.o -lpthread
+#retirei .h
+src/server/kvs: src/server/main.c src/server/operations.o src/server/kvs.o src/server/io.o src/server/parser.o src/common/io.o
+	$(CC) $(CFLAGS) $(SLEEP) -o $@ $^
 
 
-# Regra genérica para arquivos .o (com header correspondente)
+src/client/client: src/client/main.c src/client/api.o src/client/parser.o src/common/io.o
+	$(CC) $(CFLAGS) -o $@ $^
+
 %.o: %.c %.h
-	@$(CC) $(CFLAGS) -c $<
+	$(CC) $(CFLAGS) -c ${@:.o=.c} -o $@
 
-# Limpeza de arquivos gerados
 clean:
-	@rm -f *.o kvs
-	@rm -rf *.dSYM
+	rm -f src/common/*.o src/client/*.o src/server/*.o src/server/core/*.o src/server/kvs src/client/client src/client/client_write
 
-# Execução do servidor
-run: kvs
-	@./kvs
-
-# Execução do cliente
-run-client: client
-	@./client
-
-# Formatação do código
 format:
 	@which clang-format >/dev/null 2>&1 || echo "Please install clang-format to run this command"
-	clang-format -i *.c *.h
+	clang-format -i src/common/*.c src/common/*.h src/client/*.c src/client/*.h src/server/*.c src/server/*.h
+
