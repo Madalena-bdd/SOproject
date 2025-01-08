@@ -52,8 +52,12 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
-# MacOs
+# macOS
 .DS_Store
 
 # Vscode
 .vscode/
+
+# Executables
+src/client/client
+src/server/server
