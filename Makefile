@@ -16,17 +16,17 @@ all: src/server/kvs src/client/client
 
 #retirei .h
 src/server/kvs: src/server/main.c src/server/operations.o src/server/kvs.o src/server/io.o src/server/parser.o src/common/io.o
-	$(CC) $(CFLAGS) $(SLEEP) -o $@ $^
+	@$(CC) $(CFLAGS) $(SLEEP) -o $@ $^
 
 
 src/client/client: src/client/main.c src/client/api.o src/client/parser.o src/common/io.o
-	$(CC) $(CFLAGS) -o $@ $^
+	@$(CC) $(CFLAGS) -o $@ $^
 
 %.o: %.c %.h
-	$(CC) $(CFLAGS) -c ${@:.o=.c} -o $@
+	@$(CC) $(CFLAGS) -c ${@:.o=.c} -o $@
 
 clean:
-	rm -f src/common/*.o src/client/*.o src/server/*.o src/server/core/*.o src/server/kvs src/client/client src/client/client_write
+	@rm -f src/common/*.o src/client/*.o src/server/*.o src/server/core/*.o src/server/kvs src/client/client src/client/client_write
 
 format:
 	@which clang-format >/dev/null 2>&1 || echo "Please install clang-format to run this command"

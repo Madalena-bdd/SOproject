@@ -1,3 +1,12 @@
+/**
+ * A program implementing a key-value store (KVS).
+ * This file contains the main function of that program.
+ * @file main.c
+ * @authors:
+ *  Madalena Bordadágua - 110382
+ *  Madalena Martins - 110698
+ */
+
 #include <fcntl.h>
 #include <pthread.h>
 #include <stdio.h>
