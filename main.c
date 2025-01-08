@@ -26,6 +26,8 @@
 #include "operations.h"
 
 #define MAX_FILES 100
+#define MAX_SUBSCRIPTIONS 100
+#define MAX_KEY_LENGTH 40
 
 typedef struct Job_data {
   int fd;
@@ -42,6 +44,18 @@ typedef struct {
   int num_files;                                                                    // Number of files in the directory
   pthread_mutex_t mutex;                                                            // Mutex for thread synchronization
 } File_list;
+
+/*
+// Estruturas para armazenar informações sobre os clientes e suas subscrições
+typedef struct Cliente {
+    int pid;  // ID do processo cliente
+    int subscribe_fifo_fd;  // Descritor do FIFO de notificações
+    char chaves_subscritas[MAX_SUBSCRIPTIONS][MAX_KEY_LENGTH + 1];   // Chaves para a qual o cliente está subscrito
+    struct Cliente* next;
+} Cliente;
+
+Cliente* clientes = NULL;  // Lista de clientes conectados
+*/
 
 int MAX_THREADS = 0;                                                                // Maximum number of threads
 volatile int concurrent_backups = 0;                                                         // Maximum number of concurrent backups, received as argument
