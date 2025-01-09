@@ -1,12 +1,16 @@
-#include <unistd.h>
+#include <ctype.h>
 #include <dirent.h>
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>    
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
-#include <stdio.h>
+#include <unistd.h>
 
 #include "constants.h"
 #include "parser.h"
@@ -27,6 +31,9 @@ size_t active_backups = 0;     // Number of active backups
 size_t max_backups;            // Maximum allowed simultaneous backups
 size_t max_threads;            // Maximum allowed simultaneous threads
 char* jobs_directory = NULL;
+char *registration_fifo_name_global; // Variável global para o nome do FIFO
+size_t active_sessions = 0;
+pthread_mutex_t sessions_lock = PTHREAD_MUTEX_INITIALIZER;
 
 int filter_job_files(const struct dirent* entry) {
     const char* dot = strrchr(entry->d_name, '.');
@@ -252,7 +259,25 @@ static void dispatch_threads(DIR* dir) {
     }
   }
 
-  // ler do FIFO de registo
+  // Ler do FIFO de registo
+  int registration_fifo_fd = open(registration_fifo_name_global, O_RDONLY );
+  if (registration_fifo_fd == -1) {
+    free(threads);
+    return;
+  }
+  // Ler dados do FIFO
+  char buffer[1024];  // Tamanho do buffer para dados recebidos
+  ssize_t bytes_read;
+  while ((bytes_read = read(registration_fifo_fd, buffer, sizeof(buffer) - 1)) > 0) {
+      buffer[bytes_read] = '\0';  // Garantir que a string seja terminada corretamente
+      printf("Received from FIFO: %s\n", buffer);
+
+  }
+
+  if (bytes_read == -1) {
+      perror("Error reading from FIFO");
+  }
+  close(registration_fifo_fd);
 
   for (unsigned int i = 0; i < max_threads; i++) {
     if (pthread_join(threads[i], NULL) != 0) {
@@ -270,28 +295,52 @@ static void dispatch_threads(DIR* dir) {
   free(threads);
 }
 
+// Função para limpar o FIFO ao sair
+void cleanup_fifo() {
+    if (access(registration_fifo_name_global, F_OK) != -1) { // Verifica se o FIFO existe
+        if (unlink(registration_fifo_name_global) == -1) {
+            perror("Failed to unlink FIFO");
+        } else {
+            fprintf(stdout, "FIFO %s removed\n", registration_fifo_name_global);
+        }
+    } else {
+        fprintf(stdout, "FIFO %s does not exist, skipping removal.\n", registration_fifo_name_global);
+    }
+}
 
 int main(int argc, char** argv) {
-  if (argc < 4) {
+  if (argc < 5) {
     write_str(STDERR_FILENO, "Usage: ");
     write_str(STDERR_FILENO, argv[0]);
     write_str(STDERR_FILENO, " <jobs_dir>");
 		write_str(STDERR_FILENO, " <max_threads>");
 		write_str(STDERR_FILENO, " <max_backups> \n");
+    write_str(STDERR_FILENO, " <registration_fifo_name_global> \n");
     return 1;
   }
 
   jobs_directory = argv[1];
-
   char* endptr;
+  max_threads = strtoul(argv[2], &endptr, 10);
   max_backups = strtoul(argv[3], &endptr, 10);
+  registration_fifo_name_global = argv[4];  //FIFO de registo
+
+  // Criar o FIFO de registro
+    if (mkfifo(registration_fifo_name_global, 0666) == -1) {
+        if (errno != EEXIST) {                                                      // Ignorar erro se o FIFO já existir
+            perror("Failed to create registration FIFO");
+            return 1;
+        }
+    }
+    fprintf(stdout, "Registration FIFO created: %s\n", registration_fifo_name_global);
+
+  // Registra a função de limpeza do FIFO para ser chamada ao sair
+  signal(SIGINT, cleanup_fifo); 
 
   if (*endptr != '\0') {
     fprintf(stderr, "Invalid max_proc value\n");
     return 1;
   }
-
-  max_threads = strtoul(argv[2], &endptr, 10);
 
   if (*endptr != '\0') {
     fprintf(stderr, "Invalid max_threads value\n");
