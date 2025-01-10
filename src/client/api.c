@@ -18,6 +18,8 @@ static char g_req_pipe_path[PATH_MAX];
 static char g_resp_pipe_path[PATH_MAX];
 static char g_notif_pipe_path[PATH_MAX];
 
+
+
 int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,
                 char const* notif_pipe_path, int* notif_pipe) { // fix me - os tamanhos das mensagens e como estão a ser lançadas
 
@@ -235,7 +237,7 @@ int kvs_unsubscribe(const char* key) {
 
     // Criar a mensagem de desubscrição (formato: "4|chave")
     char message[MAX_PIPE_PATH_LENGTH * 3 + 3 + sizeof(int)];
-    snprintf(message, sizeof(message), "4|%s", key);
+    snprintf(message, sizeof(message), "3|%s", key);
 
     // Enviar a mensagem para o servidor
     if (write(req_pipe_fd, message, strlen(message)) == -1) {

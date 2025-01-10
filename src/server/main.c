@@ -24,6 +24,14 @@ struct SharedData {
   pthread_mutex_t directory_mutex;
 };
 
+typedef struct Cliente { // fix me - lista de chaves subscritas, não sei se precisa de mais coisas
+    int id;  // ID do processo cliente
+    char chaves_subscritas[MAX_SESSIONS][MAX_STRING_SIZE];   // Chaves para a qual o cliente está subscrito 
+    struct Cliente* next;
+} Cliente;
+
+Cliente* clientes = NULL;
+
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
 
@@ -431,7 +439,7 @@ int main(int argc, char** argv) {
 }
 
 // Função principal para lidar com os pedidos do cliente
-void handle_client_request(int client_fd, const char* command) { // o connect é enviado diretamente para o servidor
+/*void handle_client_request(int client_fd, const char* command) { // o connect é enviado diretamente para o servidor
     char command_type[MAX_STRING_SIZE];
     char argument[MAX_STRING_SIZE];
 
@@ -453,4 +461,25 @@ void handle_client_request(int client_fd, const char* command) { // o connect é
     }
 }
 
-// Função para lidar com o pedido de subscrição
+
+int handle_connection_request(int server_pipe_fd, char* request_message) {
+  char response[2];
+
+      // Bloquear a execução até que haja espaço para uma nova sessão
+    pthread_mutex_lock(&sessions_lock);
+        if (active_sessions >= MAX_SESSIONS) {
+        // Se o servidor não puder aceitar mais sessões, enviar erro e desbloquear
+        response[0] = '0';  // Código de erro (máximo de sessões atingido)
+        write(server_pipe_fd, response, sizeof(response));
+        pthread_mutex_unlock(&sessions_lock);
+        return 1;  // Retornar erro, já que o número máximo de sessões foi atingido
+    }
+
+        // Se houver espaço, criar a nova sessão
+    active_sessions++;
+    response[0] = '1'; 
+
+    //FIX ME - criar um novo cliente e adicionar à lista de clientes
+    // FIX ME - como é que o cliente recebe a resposta
+    // FIX ME - conectar de facto o cliente ao servidor
+}*/
