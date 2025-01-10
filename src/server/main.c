@@ -429,3 +429,28 @@ int main(int argc, char** argv) {
 
   return 0;
 }
+
+// Função principal para lidar com os pedidos do cliente
+void handle_client_request(int client_fd, const char* command) { // o connect é enviado diretamente para o servidor
+    char command_type[MAX_STRING_SIZE];
+    char argument[MAX_STRING_SIZE];
+
+    // Dividir o comando e o argumento
+    if (sscanf(command, "%s %s", command_type, argument) < 2) {
+        fprintf(stderr, "Comando inválido: %s\n", command);
+        return;
+    }
+
+    if (strcmp(command_type, "SUBSCRIBE") == 0) {
+        handle_subscribe(client_fd, argument);
+    } else if (strcmp(command_type, "UNSUBSCRIBE") == 0) {
+        handle_unsubscribe(client_fd, argument);
+    } else if (strcmp(command_type, "DISCONNECT") == 0) {
+        handle_disconnect(client_fd);
+    } else {
+        fprintf(stderr, "Comando desconhecido: %s\n", command_type);
+        write(client_fd, "ERROR: Comando desconhecido", 26);
+    }
+}
+
+// Função para lidar com o pedido de subscrição
