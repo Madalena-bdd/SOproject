@@ -21,7 +21,7 @@ static char g_notif_pipe_path[PATH_MAX];
 int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,
                 char const* notif_pipe_path, int* notif_pipe) { // fix me - os tamanhos das mensagens e como estão a ser lançadas
 
-        // Guardar os paths em variáveis globais
+    // Guardar os paths em variáveis globais
     strncpy(g_req_pipe_path, req_pipe_path, PATH_MAX - 1);
     g_req_pipe_path[PATH_MAX - 1] = '\0'; // Garantir terminação nula
     strncpy(g_resp_pipe_path, resp_pipe_path, PATH_MAX - 1);
@@ -115,7 +115,7 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
   }
 
  
-int kvs_disconnect(void) { // fix me - os tamanhos das mensagens e como estão a ser lançadas
+int kvs_disconnect(void) {
 
     // Abrir o FIFO de pedidos para enviar o pedido de desconexão
     int req_pipe_fd = open(g_req_pipe_path, O_WRONLY);
@@ -263,7 +263,6 @@ int kvs_unsubscribe(const char* key) {
 
     // Imprimir a resposta do servidor
     printf("Server returned %c for operation: unsubscribe\n", response[0]);
-    //nhecs
 
     // Fechar os FIFOs abertos
     close(req_pipe_fd);
@@ -271,5 +270,3 @@ int kvs_unsubscribe(const char* key) {
 
     return 0;
 }
-
-

@@ -34,6 +34,7 @@ char* jobs_directory = NULL;
 char *registration_fifo_name_global; // Variável global para o nome do FIFO
 size_t active_sessions = 0;
 pthread_mutex_t sessions_lock = PTHREAD_MUTEX_INITIALIZER;
+char active_sessions_list[MAX_SESSIONS][PATH_MAX];
 
 int filter_job_files(const struct dirent* entry) {
     const char* dot = strrchr(entry->d_name, '.');
@@ -62,6 +63,50 @@ static int entry_files(const char* dir, struct dirent* entry, char* in_path, cha
   strcpy(strrchr(out_path, '.'), ".out");
 
   return 0;
+}
+
+// Função para adicionar uma sessão
+int add_session(const char* client_pipe_path) {
+    pthread_mutex_lock(&sessions_lock);
+    if (active_sessions >= MAX_SESSIONS) {
+        pthread_mutex_unlock(&sessions_lock);
+        return -1; // Erro: Máximo de sessões atingido
+    }
+    strncpy(active_sessions_list[active_sessions], client_pipe_path, PATH_MAX - 1);
+    active_sessions++;
+    pthread_mutex_unlock(&sessions_lock);
+    return 0;
+}
+
+// Função para remover uma sessão
+int remove_session(const char* client_pipe_path) {
+    pthread_mutex_lock(&sessions_lock);
+    for (size_t i = 0; i < active_sessions; i++) {
+        if (strcmp(active_sessions_list[i], client_pipe_path) == 0) {
+            // Remover a sessão deslocando as demais
+            for (size_t j = i; j < active_sessions - 1; j++) {
+                strncpy(active_sessions_list[j], active_sessions_list[j + 1], PATH_MAX);
+            }
+            active_sessions--;
+            pthread_mutex_unlock(&sessions_lock);
+            return 0; // Sucesso
+        }
+    }
+    pthread_mutex_unlock(&sessions_lock);
+    return -1; // Sessão não encontrada
+}
+
+// Função para verificar se uma sessão está ativa
+int is_session_active(const char* client_pipe_path) {
+    pthread_mutex_lock(&sessions_lock);
+    for (size_t i = 0; i < active_sessions; i++) {
+        if (strcmp(active_sessions_list[i], client_pipe_path) == 0) {
+            pthread_mutex_unlock(&sessions_lock);
+            return 1; // Sessão ativa
+        }
+    }
+    pthread_mutex_unlock(&sessions_lock);
+    return 0; // Sessão não ativa
 }
 
 static int run_job(int in_fd, int out_fd, char* filename) {

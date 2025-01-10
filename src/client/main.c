@@ -30,23 +30,33 @@ int main(int argc, char* argv[]) {
   char resp_pipe_path[256] = "/tmp/resp";
   char notif_pipe_path[256] = "/tmp/notif";
 
-  char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
-  unsigned int delay_ms;
-  size_t num;
-
   strncat(req_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(resp_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
   strncat(notif_pipe_path, argv[1], strlen(argv[1]) * sizeof(char));
 
-  // TODO open pipes
+  char* server_pipe_path = argv[2]; // Caminho do FIFO do servidor
+
+  int notif_pipe_fd; // Descriptor para o pipe de notificações
+
+  if (kvs_connect(req_pipe_path, resp_pipe_path, server_pipe_path, notif_pipe_path, &notif_pipe_fd) != 0) { // Conectar ao servidor
+    fprintf(stderr, "Erro ao conectar ao servidor\n");
+    return 1;
+  }
+
+  printf("Conectado ao servidor com sucesso.\n");
+
+  char keys[MAX_NUMBER_SUB][MAX_STRING_SIZE] = {0};
+  unsigned int delay_ms;
+  size_t num;
+  // TO DO open pipes
 
   while (1) {
     switch (get_next(STDIN_FILENO)) {
       case CMD_DISCONNECT:
-        /*if (kvs_disconnect() != 0) {
+        if (kvs_disconnect() != 0) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
-        }*/
+        }
         // TODO: end notifications thread
         printf("Disconnected from server\n");
         return 0;
@@ -56,11 +66,10 @@ int main(int argc, char* argv[]) {
         if (num == 0) {
           fprintf(stderr, "Invalid command. See HELP for usage\n");
           continue;
-        }
-         
-        /*if (kvs_subscribe(keys[0])) {
+        } 
+        if (kvs_subscribe(keys[0])) {
             fprintf(stderr, "Command subscribe failed\n");
-        }*/
+        }
 
         break;
 
@@ -71,9 +80,9 @@ int main(int argc, char* argv[]) {
           continue;
         }
          
-        /*if (kvs_unsubscribe(keys[0])) {
-            fprintf(stderr, "Command subscribe failed\n");
-        }*/
+        if (kvs_unsubscribe(keys[0])) {
+          fprintf(stderr, "Command subscribe failed\n");
+        }
 
         break;
 

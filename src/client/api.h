@@ -3,7 +3,7 @@
 
 #include <stddef.h>
 #include "src/common/constants.h"
-/*
+
 /// Connects to a kvs server.
 /// @param req_pipe_path Path to the name pipe to be created for requests.
 /// @param resp_pipe_path Path to the name pipe to be created for responses.
@@ -26,6 +26,6 @@ int kvs_subscribe(const char* key);
 /// @return 0 if the key was unsubscribed successfully  (subscription existed and was removed), 1 otherwise.
 
 int kvs_unsubscribe(const char* key);
-*/
+
  
 #endif  // CLIENT_API_H
