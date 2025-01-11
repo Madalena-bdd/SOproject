@@ -1,4 +1,3 @@
-#include "api.h"
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>  
@@ -13,11 +12,12 @@
 #include <sys/types.h>
 #include <sys/wait.h>  
 #include <unistd.h>
+#include "api.h"
 
 static char g_req_pipe_path[PATH_MAX];
 static char g_resp_pipe_path[PATH_MAX];
 static char g_notif_pipe_path[PATH_MAX];
-
+static char g_client_fifo_path[PATH_MAX];
 
 
 int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,

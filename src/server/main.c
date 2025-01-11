@@ -24,6 +24,7 @@ struct SharedData {
   pthread_mutex_t directory_mutex;
 };
 
+
 typedef struct Cliente { // fix me - lista de chaves subscritas, não sei se precisa de mais coisas
     int id;  // ID do processo cliente
     char chaves_subscritas[MAX_SESSIONS][MAX_STRING_SIZE];   // Chaves para a qual o cliente está subscrito 
@@ -369,7 +370,7 @@ int main(int argc, char** argv) {
 		write_str(STDERR_FILENO, " <max_threads>");
 		write_str(STDERR_FILENO, " <max_backups> \n");
     write_str(STDERR_FILENO, " <registration_fifo_name_global> \n");
-    return 1;
+    return 1; //cleanup_and_exit(1);
   }
 
   jobs_directory = argv[1];
