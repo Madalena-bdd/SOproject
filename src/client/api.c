@@ -14,10 +14,11 @@
 #include <unistd.h>
 #include "api.h"
 
+// Armazenamento dos caminhos dos fifos como variaveis globais
 static char g_req_pipe_path[PATH_MAX];
 static char g_resp_pipe_path[PATH_MAX];
 static char g_notif_pipe_path[PATH_MAX];
-static char g_client_fifo_path[PATH_MAX];
+//static char g_client_fifo_path[PATH_MAX];
 
 
 int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,
@@ -82,7 +83,8 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
 
     // Criar a mensagem de pedido
     char message[MAX_PIPE_PATH_LENGTH * 3 + 3 + sizeof(int)];  
-    snprintf(message, sizeof(message), "1|%s|%s|%s", req_pipe_path, resp_pipe_path, notif_pipe_path);
+    snprintf(message, sizeof(message), "1|%s|%s|%s", req_pipe_path, resp_pipe_path, notif_pipe_path); 
+    //FIX MEEE: esta mensagem já não foi enviada pela main??
 
     // Enviar o pedido para o servidor
     if (write(server_pipe, message, strlen(message)) == -1) {
@@ -177,8 +179,9 @@ int kvs_disconnect(void) {
   
   return 0;
 }
+
 int kvs_subscribe(const char* key) {
-  // send subscribe message to request pipe and wait for response in response pipe
+  // Send subscribe message to request pipe and wait for response in response pipe
     if (key == NULL) {
     fprintf(stderr, "Erro: Chave nula na subscrição.\n");
     return 1;
