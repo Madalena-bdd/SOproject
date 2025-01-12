@@ -38,6 +38,10 @@ Cliente* clients = NULL;
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t sessions_lock = PTHREAD_MUTEX_INITIALIZER;
+//Esperar por Desconexões
+int active_threads = 0;
+pthread_mutex_t thread_mutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t thread_cond = PTHREAD_COND_INITIALIZER;
 
 size_t active_backups = 0;     // Number of active backups
 size_t max_backups;            // Maximum allowed simultaneous backups
@@ -50,6 +54,8 @@ char active_sessions_list[MAX_SESSIONS][PATH_MAX]; // LISTA DE SESSÕES ATIVAS
 // Declarações das funções
 int handle_subscribe(int client_id, const char* key);
 int handle_unsubscribe(int client_id, const char* key);
+//void* client_handler(void* arg);
+//void handle_connection_requests(int req_fd);
 
 
 // ------JOBS------ (1ªentrega)
@@ -468,12 +474,7 @@ int main(int argc, char** argv) {
 
 
 
-
-
 /*
-//Sugestão: Passar para o main.c do cliente
-
-
 // ------PEDIDOS CLIENTE (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT------
 // Função principal para lidar com os pedidos do cliente
 void handle_client_request(int client_id, const char* command) { // o connect é enviado diretamente para o servidor
@@ -497,8 +498,135 @@ void handle_client_request(int client_id, const char* command) { // o connect é
         fprintf(stderr, "Comando desconhecido: %s\n", command_type);
     }
 }
+*/
+
+/*
+void* connection_manager(void* arg) {
+    int server_fifo_fd = *(int*)arg;
+    char buffer[256];
+
+    while (1) {
+        ssize_t bytes_read = read(server_fifo_fd, buffer, sizeof(buffer) - 1);
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0'; // Garante terminação da string
+            char command[32], client_id[32], req_path[256], resp_path[256], notif_path[256];
+            sscanf(buffer, "%31[^|]|%31[^|]|%255[^|]|%255[^|]|%255s", command, client_id, req_path, resp_path, notif_path);
+            
+            if (strcmp(command, "CONNECT") == 0) { // QUESTÃO - HÁ COMANDO DE CONNECT?
+                // Verificação se há espaço para nova sessão
+                char response[2];  // Armazena a resposta a ser enviada (Sucesso ou Erro)
+
+                pthread_mutex_lock(&sessions_lock);
+                if (active_sessions >= MAX_SESSIONS) {
+                    // Se o servidor não puder aceitar mais sessões, enviar erro e desbloquear
+                    response[0] = '0';  // Código de erro (máximo de sessões atingido)
+                    write(server_fifo_fd, response, sizeof(response));
+                    pthread_mutex_unlock(&sessions_lock);
+                    continue;
+                }
+
+                // Se houver espaço, criar a nova sessão
+                active_sessions++;
+                response[0] = '1';  // Confirmação de sucesso
+
+                // Enviar resposta ao cliente
+                write(server_fifo_fd, response, sizeof(response));
+                pthread_mutex_unlock(&sessions_lock);
+
+                // Criar novo cliente e adicionar à lista de clientes
+                Cliente* novo_cliente = (Cliente*)malloc(sizeof(Cliente));
+                if (novo_cliente == NULL) {
+                    perror("Erro ao alocar memória para novo cliente");
+                    continue;
+                }
+
+                novo_cliente->id = atoi(client_id);  // ID do cliente
+                strncpy(novo_cliente->fifo_request, req_path, MAX_STRING_SIZE);
+                strncpy(novo_cliente->fifo_response, resp_path, MAX_STRING_SIZE);
+                strncpy(novo_cliente->fifo_notify, notif_path, MAX_STRING_SIZE);
+                memset(novo_cliente->chaves_subscritas, 0, sizeof(novo_cliente->chaves_subscritas)); // Inicializa as chaves como 0
+                novo_cliente->next = NULL;
+
+                // Adicionar o cliente à lista ligada
+                pthread_mutex_lock(&sessions_lock);
+                novo_cliente->next = clients;
+                clients = novo_cliente;
+                pthread_mutex_unlock(&sessions_lock);
+
+                // Passar os descritores para uma thread dedicada
+                pthread_t client_thread;
+                pthread_create(&client_thread, NULL, client_handler, novo_cliente);
+            }
+        }
+    }
+    return NULL;
+}
 
 
+void handle_connect(const char* client_id, const char* req_path, const char* resp_path, const char* notif_path) {
+    int req_fd = open(req_path, O_RDONLY);
+    int resp_fd = open(resp_path, O_WRONLY);
+    int notif_fd = open(notif_path, O_WRONLY);
+
+    if (req_fd == -1 || resp_fd == -1 || notif_fd == -1) {
+        perror("Erro ao abrir FIFOs do cliente");
+        // Responder ao cliente com erro
+        char error_message[] = "ERROR"; // erro = 0
+        write(resp_fd, error_message, strlen(error_message));
+        if (req_fd != -1) close(req_fd);
+        if (resp_fd != -1) close(resp_fd);
+        if (notif_fd != -1) close(notif_fd);
+        return;
+    }
+
+    // Responder ao cliente com sucesso
+    char success_message[] = "SUCCESS"; // sucesso = 1
+    write(resp_fd, success_message, strlen(success_message));
+
+    // Passar os descritores para uma thread dedicada
+    client_info_t* client = malloc(sizeof(client_info_t));
+    client->req_fd = req_fd;
+    client->resp_fd = resp_fd;
+    client->notif_fd = notif_fd;
+    snprintf(client->id, sizeof(client->id), "%s", client_id);
+
+    pthread_t client_thread;
+    pthread_create(&client_thread, NULL, client_handler, client);
+}
+
+void* client_handler(void* arg) {
+    client_t* client = (client_t*)arg;
+    char buffer[1024];
+
+    while (1) {
+        // Ler o pedido do cliente
+        ssize_t n = read(client->req_pipe_fd, buffer, sizeof(buffer));
+        if (n <= 0) break;  // Desconexão ou erro
+
+        // Processar o pedido
+        if (strncmp(buffer, "disconnect", 10) == 0) {
+            printf("Cliente %d desconectado\n", client->id);
+            break;
+        }
+
+        // Responder ao cliente
+        write(client->resp_pipe_fd, "0", 1);  // Sucesso
+    }
+
+    // Fechar FIFOs e liberar memória
+    close(client->req_pipe_fd);
+    close(client->resp_pipe_fd);
+    close(client->notif_pipe_fd);
+    free(client);
+    pthread_mutex_lock(&thread_mutex);
+    active_threads--;
+    pthread_cond_signal(&thread_cond);
+    pthread_mutex_unlock(&thread_mutex);
+    return NULL;
+}
+*/
+
+/*
 problemas:
 -qual é "command" que está a receber?
 -ele está a divir o comando em comnado e argumento ou seja o comando é algo como "SUBSCRIBE chave"
