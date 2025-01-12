@@ -29,11 +29,11 @@ typedef struct Cliente {
     char fifo_request[MAX_STRING_SIZE];   // Caminho do FIFO de pedidos
     char fifo_response[MAX_STRING_SIZE];  // Caminho do FIFO de respostas
     char fifo_notify[MAX_STRING_SIZE];    // Caminho do FIFO de notificações
-    char chaves_subscritas[MAX_SESSIONS][MAX_STRING_SIZE];  // Chaves subscritas
+    char chaves_subscritas[MAX_KEYS][MAX_STRING_SIZE];  // Chaves subscritas
     struct Cliente* next;
 } Cliente;
 
-Cliente* clientes = NULL; 
+Cliente* clients = NULL; 
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -47,6 +47,9 @@ size_t active_sessions = 0;    // Number of active sessions
 char* jobs_directory = NULL;
 char* registration_fifo_name_global = NULL; // Global variable for the FIFO name //cainho do fifo de registo!
 char active_sessions_list[MAX_SESSIONS][PATH_MAX]; // LISTA DE SESSÕES ATIVAS
+// Declarações das funções
+int handle_subscribe(int client_id, const char* key);
+int handle_unsubscribe(int client_id, const char* key);
 
 
 // ------JOBS------ (1ªentrega)
@@ -467,10 +470,10 @@ int main(int argc, char** argv) {
 
 //Sugestão: Passar para o main.c do cliente
 
-/* 
+
 // ------PEDIDOS CLIENTE (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT------
 // Função principal para lidar com os pedidos do cliente
-void handle_client_request(int client_fd, const char* command) { // o connect é enviado diretamente para o servidor
+void handle_client_request(int client_id, const char* command) { // o connect é enviado diretamente para o servidor
     char command_type[MAX_STRING_SIZE]; // Armazena o tipo de comando (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT)
     char argument[MAX_STRING_SIZE];  // Armazena o argumento do comando (chave)
 
@@ -482,29 +485,28 @@ void handle_client_request(int client_fd, const char* command) { // o connect é
 
     // Processamento do comando
     if (strcmp(command_type, "SUBSCRIBE") == 0) {
-        //handle_subscribe(client_fd, argument);
+        handle_subscribe(client_id, argument);
     } else if (strcmp(command_type, "UNSUBSCRIBE") == 0) {
-        //handle_unsubscribe(client_fd, argument);
+        handle_unsubscribe(client_id, argument);
     } else if (strcmp(command_type, "DISCONNECT") == 0) {
-        //handle_disconnect(client_fd);
+        //handle_disconnect(client_id);
     } else {
         fprintf(stderr, "Comando desconhecido: %s\n", command_type);
-        write(client_fd, "ERROR: Comando desconhecido", 26);
     }
 }
 
 
+/*
 problemas:
 -qual é "command" que está a receber?
 -ele está a divir o comando em comnado e argumento ou seja o comando é algo como "SUBSCRIBE chave"
 -função não está definida
 -funções handle_subscribe, handle_unsubscribe e handle_disconnect não existem
 -só há estes três comandos que o cliente pode pedir?
-
-
+*/
 
 // ------PEDIDOS DE CONEXÃO DE NOVOS CLIENTE + CRIAÇÃO DO CLIENTE------
-int handle_connection_request(int server_pipe_fd, char* request_message) {
+int handle_connection_request(int server_pipe_fd, char* request_message, int client_id) {
     char response[2]; // Armazena a resposta a ser enviada (Sucesso ou Erro)
 
     // Resposta = Erro
@@ -531,7 +533,7 @@ int handle_connection_request(int server_pipe_fd, char* request_message) {
     // ---Criar um novo cliente e adicionar à lista---
 
     // Extrair o ID do cliente e os caminhos dos FIFOs da mensagem
-    int client_id ; //FIX MEE: variável não é inicialiizada; Sugestão: não é melhor colocar no main.c do cliente para fazer apenas arg[1] do id ?
+    //int client_id ; //FIX MEE: variável não é inicialiizada; Sugestão: não é melhor colocar no main.c do cliente para fazer apenas arg[1] do id ?
     char fifo_request[MAX_STRING_SIZE], fifo_response[MAX_STRING_SIZE], fifo_notify[MAX_STRING_SIZE];
 
     // A mensagem tem o formato: "1|<fifo_request>|<fifo_response>|<fifo_notify>"
@@ -554,13 +556,94 @@ int handle_connection_request(int server_pipe_fd, char* request_message) {
 
     // Adicionar cliente à lista ligada
     pthread_mutex_lock(&sessions_lock);
-    novo_cliente->next = clientes;
-    clientes = novo_cliente;
+    novo_cliente->next = clients;
+    clients = novo_cliente;
     pthread_mutex_unlock(&sessions_lock);
 
     return 0; 
 }
+/*
 problemas:
 -está a enviar a resposta (l. 522) e a mensagem (l.534) (não está a enviar o "1" duas vezes??)
 -l.547
 */
+
+//MANTÉM O PROBLEMA DO ID DO CLIENTE
+int handle_subscribe(int client_id, const char* key) { 
+    // Procurar o cliente na lista de clientes ativos usando o ID
+    Cliente* cliente = NULL;
+    Cliente* current = clients;  // active_clients é a lista de clientes ativos
+
+    // Procurar o cliente pelo ID na lista ligada
+    while (current != NULL) {
+        if (current->id == client_id) {
+            cliente = current;
+            break;
+        }
+        current = current->next;
+    }
+
+    if (cliente == NULL) {
+        // Cliente não encontrado
+        fprintf(stderr, "Cliente não encontrado. ID: %d\n", client_id);
+        return 1;  // Erro
+    }
+
+     // Verificar se a chave já está subscrita pelo cliente
+    for (size_t i = 0; i < MAX_KEYS; i++) {
+        if (strcmp(cliente->chaves_subscritas[i], key) == 0) {
+            return 1;
+        }
+    }
+
+    // Procurar uma posição livre para armazenar a chave subscrita
+    for (size_t i = 0; i < MAX_KEYS; i++) {
+        if (cliente->chaves_subscritas[i][0] == '\0') { // Se encontrar uma posição livre
+            strncpy(cliente->chaves_subscritas[i], key, MAX_STRING_SIZE - 1);
+            return 0;
+        }
+    }
+
+    // Se não houver espaço para mais subscrições
+    fprintf(stderr, "Limite de subscrições atingido para o cliente %d\n", client_id);
+    return 1;  // Erro
+}
+
+//MANTÉM O PROBLEMA DO ID DO CLIENTE
+int handle_unsubscribe(int client_id, const char* key) {
+    // Procurar o cliente na lista de clientes ativos usando o ID
+    Cliente* cliente = NULL;
+    Cliente* current = clients;  // active_clients é a lista de clientes ativos
+
+    // Procurar o cliente pelo ID na lista ligada
+    while (current != NULL) {
+        if (current->id == client_id) {
+            cliente = current;
+            break;
+        }
+        current = current->next;
+    }
+
+    if (cliente == NULL) {
+        // Cliente não encontrado
+        return 1;  // Erro
+    }
+
+    // Verificar se o cliente está subscrito na chave
+    int found = 0;  // Flag para verificar se a chave foi encontrada
+    for (size_t i = 0; i < MAX_KEYS; i++) {
+        if (strcmp(cliente->chaves_subscritas[i], key) == 0) {
+            // Encontramos a chave, vamos removê-la
+            memset(cliente->chaves_subscritas[i], 0, MAX_STRING_SIZE);  // Limpa a chave
+            found = 1;
+            break;
+        }
+    }
+
+    if (!found) {
+        // Cliente não está subscrito na chave
+        return 1;  // Erro
+    }
+
+    return 0;  // Sucesso
+}
