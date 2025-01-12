@@ -19,6 +19,28 @@
 #include "src/common/constants.h"
 #include "src/common/io.h"
 
+// Função que lida com notificações - thread
+void* notification_handler(void* arg) {
+    int notif_pipe_fd = *(int*)arg;  // Cast e desreferenciação do argumento para obter o descritor do pipe
+    char buffer[256];
+
+    while (1) {
+        ssize_t bytes_read = read(notif_pipe_fd, buffer, sizeof(buffer) - 1); // Read lê dados do descritor de arquivo notif_pipe_fd para o buffer
+        if (bytes_read > 0) {
+            buffer[bytes_read] = '\0';  // Adiciona o terminador nulo na string
+            printf("Notification: %s\n", buffer); // Imprime a notificação lida
+        } else if (bytes_read == 0) {
+            // Pipe foi fechado
+            break;
+        } else {
+            perror("Error reading notifications");
+            break;
+        }
+    }
+    return NULL;
+}
+
+
 int main(int argc, char* argv[]) {
 
   if (argc < 3) { //testar com 4 argumentos!!!
@@ -48,6 +70,12 @@ int main(int argc, char* argv[]) {
     return 1;
   }
 
+  pthread_t notif_thread;
+  if (pthread_create(&notif_thread, NULL, notification_handler, &notif_pipe_fd) != 0) {
+      perror("Failed to create notification thread");
+      return 1;
+  }
+
   printf("Conectado ao servidor com sucesso.\n");
   
 
@@ -62,7 +90,13 @@ int main(int argc, char* argv[]) {
           fprintf(stderr, "Failed to disconnect to the server\n");
           return 1;
         }
-        // FIXX MEEE: end notifications thread
+
+        // End notification thread
+        if (close(notif_pipe_fd) != 0) {
+          perror("Failed to close notification pipe");
+        }
+        pthread_join(notif_thread, NULL);
+
         printf("Disconnected from server\n");
         return 0;
 

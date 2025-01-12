@@ -468,6 +468,9 @@ int main(int argc, char** argv) {
 
 
 
+
+
+/*
 //Sugestão: Passar para o main.c do cliente
 
 
@@ -496,14 +499,13 @@ void handle_client_request(int client_id, const char* command) { // o connect é
 }
 
 
-/*
 problemas:
 -qual é "command" que está a receber?
 -ele está a divir o comando em comnado e argumento ou seja o comando é algo como "SUBSCRIBE chave"
 -função não está definida
 -funções handle_subscribe, handle_unsubscribe e handle_disconnect não existem
 -só há estes três comandos que o cliente pode pedir?
-*/
+
 
 // ------PEDIDOS DE CONEXÃO DE NOVOS CLIENTE + CRIAÇÃO DO CLIENTE------
 int handle_connection_request(int server_pipe_fd, char* request_message, int client_id) {
@@ -562,11 +564,11 @@ int handle_connection_request(int server_pipe_fd, char* request_message, int cli
 
     return 0; 
 }
-/*
+
 problemas:
 -está a enviar a resposta (l. 522) e a mensagem (l.534) (não está a enviar o "1" duas vezes??)
 -l.547
-*/
+
 
 //MANTÉM O PROBLEMA DO ID DO CLIENTE
 int handle_subscribe(int client_id, const char* key) { 
@@ -647,3 +649,4 @@ int handle_unsubscribe(int client_id, const char* key) {
 
     return 0;  // Sucesso
 }
+*/

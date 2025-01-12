@@ -1,3 +1,4 @@
+WAIT 5000
 WRITE [(e,edmundo)(f,felix)]
 WRITE [(g,gabriela)(h,helio)]
 BACKUP
