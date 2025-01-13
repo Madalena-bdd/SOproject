@@ -239,3 +239,8 @@ int kvs_unsubscribe(const char* key) {
 
     return 0;
 }
+
+//client thread to handle notifications -> client
+// Server precisa buffer producer consumer, cada client tem ma thread dedicada. 
+// Dar start ás threads dos clientes e depois com a ajuda do buffer producer consumer,
+// a thread manager tem de passar os clients para a proxima thread disponível.

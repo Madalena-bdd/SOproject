@@ -56,9 +56,10 @@ size_t active_sessions = 0;    // Number of active sessions
 char* jobs_directory = NULL;
 char* registration_fifo_name_global = NULL; // Global variable for the FIFO name //cainho do fifo de registo!
 char active_sessions_list[MAX_SESSIONS][PATH_MAX]; // LISTA DE SESSÕES ATIVAS
+
 // Declarações das funções
-//int handle_subscribe(int client_id, const char* key);
-//int handle_unsubscribe(int client_id, const char* key);
+int handle_subscribe(int client_id, const char* key);
+int handle_unsubscribe(int client_id, const char* key);
 void* client_handler(void* arg);
 void* connection_manager(void* arg);
 void handle_connect(Cliente* novo_cliente);
@@ -504,36 +505,6 @@ int main(int argc, char** argv) {
   return 0;
 }
 
-
-
-/*
-// ------PEDIDOS CLIENTE (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT------
-// Função principal para lidar com os pedidos do cliente
-void handle_client_request(int client_id, const char* command) { // o connect é enviado diretamente para o servidor
-    char command_type[MAX_STRING_SIZE]; // Armazena o tipo de comando (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT)
-    char argument[MAX_STRING_SIZE];  // Armazena o argumento do comando (chave)
-
-    // Dividir o comando em comando e argumento "SUBSCRIBE chave"
-    if (sscanf(command, "%s %s", command_type, argument) < 2) {
-        fprintf(stderr, "Comando inválido: %s\n", command);
-        return;
-    }
-
-    // Processamento do comando
-    if (strcmp(command_type, "SUBSCRIBE") == 0) {
-        handle_subscribe(client_id, argument);
-    } else if (strcmp(command_type, "UNSUBSCRIBE") == 0) {
-        handle_unsubscribe(client_id, argument);
-    } else if (strcmp(command_type, "DISCONNECT") == 0) {
-        //handle_disconnect(client_id);
-    } else {
-        fprintf(stderr, "Comando desconhecido: %s\n", command_type);
-    }
-}
-*/
-
-
-
 void* connection_manager(void* arg) {
     int server_fifo_fd = *(int*)arg;
     char buffer[256];
@@ -604,7 +575,7 @@ void handle_connect(Cliente* novo_cliente) {
     if (req_fd == -1 || resp_fd == -1 || notif_fd == -1) {
         perror("Erro ao abrir FIFOs do cliente");
         // Responder ao cliente com erro
-        char error_message[] = "ERROR"; // erro = 0
+        char error_message[] = "0"; // erro = 0
         write(resp_fd, error_message, strlen(error_message));
         if (req_fd != -1) close(req_fd);
         if (resp_fd != -1) close(resp_fd);
@@ -613,7 +584,7 @@ void handle_connect(Cliente* novo_cliente) {
     }
 
     // Responder ao cliente com sucesso
-    char success_message[] = "SUCCESS"; // sucesso = 1
+    char success_message[] = "1"; // sucesso = 1
     write(resp_fd, success_message, strlen(success_message));
 
     // Passar os descritores para uma thread dedicada
@@ -625,6 +596,32 @@ void handle_connect(Cliente* novo_cliente) {
     pthread_create(&client_thread, NULL, client_handler, novo_cliente);
 }
 
+
+// ------PEDIDOS CLIENTE (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT)------
+// Função principal para lidar com os pedidos do cliente
+void handle_client_request(int client_id, const char* command) { // o connect é enviado diretamente para o servidor
+    char command_type[MAX_STRING_SIZE]; // Armazena o tipo de comando (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT)
+    char argument[MAX_STRING_SIZE];  // Armazena o argumento do comando (chave)
+
+    // Dividir o comando em comando e argumento "SUBSCRIBE chave"
+    if (sscanf(command, "%s %s", command_type, argument) < 2) {
+        fprintf(stderr, "Comando inválido: %s\n", command);
+        return;
+    }
+
+    // Processamento do comando
+    if (strcmp(command_type, "3") == 0) { //SUBSCRIBE==3
+        handle_subscribe(client_id, argument);
+    } else if (strcmp(command_type, "4") == 0) { //UNSUBSCRIBE==4
+        handle_unsubscribe(client_id, argument);
+    } else if (strcmp(command_type, "2") == 0) { //DISCONNECT==2
+        //handle_disconnect(client_id);
+    } else {
+        fprintf(stderr, "Comando desconhecido: %s\n", command_type);
+    }
+}
+
+
 void* client_handler(void* arg) {
     Cliente* client = (Cliente*)arg;
     char buffer[1024];
@@ -635,7 +632,7 @@ void* client_handler(void* arg) {
         if (n <= 0) break;  // Desconexão ou erro
 
         // Processar o pedido
-        if (strncmp(buffer, "disconnect", 10) == 0) {
+        if (strncmp(buffer, "2", 10) == 0) { //disconnect == 2
             printf("Cliente %d desconectado\n", client->id);
             break;
         }
@@ -663,7 +660,6 @@ void* client_handler(void* arg) {
     return NULL;
 }
 
-
 /*
 problemas:
 -qual é "command" que está a receber?
@@ -671,72 +667,9 @@ problemas:
 -função não está definida
 -funções handle_subscribe, handle_unsubscribe e handle_disconnect não existem
 -só há estes três comandos que o cliente pode pedir?
+*/
 
 
-// ------PEDIDOS DE CONEXÃO DE NOVOS CLIENTE + CRIAÇÃO DO CLIENTE------
-int handle_connection_request(int server_pipe_fd, char* request_message, int client_id) {
-    char response[2]; // Armazena a resposta a ser enviada (Sucesso ou Erro)
-
-    // Resposta = Erro
-    // Bloquear a execução até que haja espaço para uma nova sessão
-    pthread_mutex_lock(&sessions_lock);
-    if (active_sessions >= MAX_SESSIONS) {
-        // Se o servidor não puder aceitar mais sessões, enviar erro e desbloquear
-        response[0] = '0';  // Código de erro (máximo de sessões atingido)
-        write(server_pipe_fd, response, sizeof(response));
-        pthread_mutex_unlock(&sessions_lock);
-        return 1;  // Retornar erro
-    }
-
-    // Resposta = Sucesso
-    // Se houver espaço, criar a nova sessão
-    active_sessions++;
-    response[0] = '1';  // Confirmação de sucesso
-
-    // Enviar resposta ao cliente
-    write(server_pipe_fd, response, sizeof(response));
-    pthread_mutex_unlock(&sessions_lock);
-
-
-    // ---Criar um novo cliente e adicionar à lista---
-
-    // Extrair o ID do cliente e os caminhos dos FIFOs da mensagem
-    //int client_id ; //FIX MEE: variável não é inicialiizada; Sugestão: não é melhor colocar no main.c do cliente para fazer apenas arg[1] do id ?
-    char fifo_request[MAX_STRING_SIZE], fifo_response[MAX_STRING_SIZE], fifo_notify[MAX_STRING_SIZE];
-
-    // A mensagem tem o formato: "1|<fifo_request>|<fifo_response>|<fifo_notify>"
-    sscanf(request_message, "1|%[^|]|%[^|]|%s", fifo_request, fifo_response, fifo_notify);
-
-    // Criar novo cliente
-    Cliente* novo_cliente = (Cliente*)malloc(sizeof(Cliente));
-    if (novo_cliente == NULL) {
-        perror("Erro ao alocar memória para novo cliente");
-        return -1;
-    }
-
-    // Inicializar o cliente (estrutura)
-    novo_cliente->id = client_id;  // ID poderia ser gerado ou passado, dependendo da implementação
-    strncpy(novo_cliente->fifo_request, fifo_request, MAX_STRING_SIZE);
-    strncpy(novo_cliente->fifo_response, fifo_response, MAX_STRING_SIZE);
-    strncpy(novo_cliente->fifo_notify, fifo_notify, MAX_STRING_SIZE);
-    memset(novo_cliente->chaves_subscritas, 0, sizeof(novo_cliente->chaves_subscritas)); //inicializar todas as chaves a 0
-    novo_cliente->next = NULL;
-
-    // Adicionar cliente à lista ligada
-    pthread_mutex_lock(&sessions_lock);
-    novo_cliente->next = clients;
-    clients = novo_cliente;
-    pthread_mutex_unlock(&sessions_lock);
-
-    return 0; 
-}
-
-problemas:
--está a enviar a resposta (l. 522) e a mensagem (l.534) (não está a enviar o "1" duas vezes??)
--l.547
-
-
-//MANTÉM O PROBLEMA DO ID DO CLIENTE
 int handle_subscribe(int client_id, const char* key) { 
     // Procurar o cliente na lista de clientes ativos usando o ID
     Cliente* cliente = NULL;
@@ -777,7 +710,7 @@ int handle_subscribe(int client_id, const char* key) {
     return 1;  // Erro
 }
 
-//MANTÉM O PROBLEMA DO ID DO CLIENTE
+
 int handle_unsubscribe(int client_id, const char* key) {
     // Procurar o cliente na lista de clientes ativos usando o ID
     Cliente* cliente = NULL;
@@ -815,4 +748,3 @@ int handle_unsubscribe(int client_id, const char* key) {
 
     return 0;  // Sucesso
 }
-*/
