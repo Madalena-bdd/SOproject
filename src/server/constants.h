@@ -1,5 +1,5 @@
 #define MAX_WRITE_SIZE 256
 #define MAX_STRING_SIZE 40
 #define MAX_JOB_FILE_NAME_SIZE 256
-#define MAX_SESSIONS 1 //Alterar para mais sessões!!
+#define MAX_SESSIONS 10
 #define MAX_KEYS 10000

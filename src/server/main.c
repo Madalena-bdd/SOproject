@@ -17,8 +17,7 @@
 #include "operations.h"
 #include "io.h"
 #include "pthread.h"
-
-#define BUFFER_SIZE 10
+#include "src/common/protocol.h"
 
 struct SharedData {
   DIR* dir;
@@ -26,8 +25,8 @@ struct SharedData {
   pthread_mutex_t directory_mutex;
 };
 
-typedef struct Cliente {
-  int id;  // ID do processo cliente
+typedef struct Client {
+  int id;  // ID do processo client
   char fifo_request[MAX_STRING_SIZE];   // Caminho do FIFO de pedidos
   char fifo_response[MAX_STRING_SIZE];  // Caminho do FIFO de respostas
   char fifo_notify[MAX_STRING_SIZE];    // Caminho do FIFO de notificações
@@ -36,17 +35,16 @@ typedef struct Cliente {
   int req_pipe_fd;  // File descriptor for request FIFO
   int resp_pipe_fd; // File descriptor for response FIFO
   int notif_pipe_fd; // File descriptor for notification FIFO
-  struct Cliente* next;
-} Cliente;
+} Client;
 
 typedef struct {
-Cliente* buffer[BUFFER_SIZE];
-size_t in;
-size_t out;
-size_t count;
-pthread_mutex_t mutex;
-pthread_cond_t not_empty;
-pthread_cond_t not_full;
+  Client* buffer[MAX_SESSIONS];
+  size_t in;
+  size_t out;
+  size_t count;
+  pthread_mutex_t mutex;
+  pthread_cond_t not_empty;
+  pthread_cond_t not_full;
 } Buffer;
 
 Buffer client_buffer = {
@@ -57,8 +55,6 @@ Buffer client_buffer = {
 .not_empty = PTHREAD_COND_INITIALIZER,
 .not_full = PTHREAD_COND_INITIALIZER
 };
-
-Cliente* clients = NULL; 
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -77,30 +73,33 @@ size_t active_sessions = 0;    // Number of active sessions
 
 char* jobs_directory = NULL;
 char* registration_fifo_name_global = NULL; // Global variable for the FIFO name //cainho do fifo de registo!
+int server_fifo_fd_global = 0; // Global variable file descriptor.
 char active_sessions_list[MAX_SESSIONS][PATH_MAX]; // LISTA DE SESSÕES ATIVAS
 
 // Declarações das funções
-int handle_subscribe(int client_id, const char* key);
-int handle_unsubscribe(int client_id, const char* key);
-void client_handler(Cliente* novo_cliente);
-void* connection_manager(void* arg);
-void handle_connect(Cliente* novo_cliente);
-void buffer_put(Buffer* buffer, Cliente* client);
-Cliente* buffer_get(Buffer* buffer);
-void buffer_remove(Buffer* buffer, Cliente* client);
+int handle_subscribe(Client* client, const char* key);
+int handle_unsubscribe(Client* client, const char* key);
+void client_handler(Client* novo_cliente);
+void* connection_manager();
+void handle_connect(Client* novo_cliente);
+void buffer_put(Buffer* buffer, Client* client);
+Client* buffer_get(Buffer* buffer);
+void buffer_remove(Buffer* buffer, Client* client);
 void start_client_threads(size_t num_threads);
 void cleanup_fifo_server();
-void* client_manager_pointer(void* arg);
+void* client_manager();
+int handle_client_request(int client_id, const char* command);
+void handle_disconnect(Client* client);
 
 
 // ------JOBS------ (1ªentrega)
 
 int filter_job_files(const struct dirent* entry) {
-    const char* dot = strrchr(entry->d_name, '.');
-    if (dot != NULL && strcmp(dot, ".job") == 0) {
-        return 1;  // Keep this file (it has the .job extension)
-    }
-    return 0;
+  const char* dot = strrchr(entry->d_name, '.');
+  if (dot != NULL && strcmp(dot, ".job") == 0) {
+    return 1;  // Keep this file (it has the .job extension)
+  }
+  return 0;
 }
 
 static int entry_files(const char* dir, struct dirent* entry, char* in_path, char* out_path) {
@@ -300,52 +299,58 @@ static void* get_file(void* arguments) {
 
 // ------SESSIONS------
 
+/*
 // Função para ADICIONAR UMA SESSÃO
 int add_session(const char* client_pipe_path) {
-    pthread_mutex_lock(&sessions_lock); // Bloqueia o mutex para garantir que a seção crítica seja acessada por apenas uma thread de cada vez
-    if (active_sessions >= MAX_SESSIONS) {
-        pthread_mutex_unlock(&sessions_lock);
-        return -1; // Erro: Máximo de sessões atingido
-    }
-    strncpy(active_sessions_list[active_sessions], client_pipe_path, PATH_MAX - 1);
-    active_sessions++;
+  pthread_mutex_lock(&sessions_lock); // Bloqueia o mutex para garantir que a seção crítica seja acessada por apenas uma thread de cada vez
+  if (active_sessions >= MAX_SESSIONS) {
     pthread_mutex_unlock(&sessions_lock);
-    return 0;
+    return -1; // Erro: Máximo de sessões atingido
+  }
+  strncpy(active_sessions_list[active_sessions], client_pipe_path, PATH_MAX - 1);
+  active_sessions++;
+  pthread_mutex_unlock(&sessions_lock);
+  return 0;
 }
+*/
 
+/*
 // Função para REMOVER UMA SESSÃO
 int remove_session(const char* client_pipe_path) {
-    pthread_mutex_lock(&sessions_lock);
-    for (size_t i = 0; i < active_sessions; i++) {
-        if (strcmp(active_sessions_list[i], client_pipe_path) == 0) {
-            // Remover a sessão deslocando as demais
-            for (size_t j = i; j < active_sessions - 1; j++) {
-                strncpy(active_sessions_list[j], active_sessions_list[j + 1], PATH_MAX);
-            }
-            active_sessions--;
-            pthread_mutex_unlock(&sessions_lock);
-            return 0; // Sucesso
-        }
+  pthread_mutex_lock(&sessions_lock);
+  for (size_t i = 0; i < active_sessions; i++) {
+    if (strcmp(active_sessions_list[i], client_pipe_path) == 0) {
+      // Remover a sessão deslocando as demais
+      for (size_t j = i; j < active_sessions - 1; j++) {
+        strncpy(active_sessions_list[j], active_sessions_list[j + 1], PATH_MAX);
+      }
+      active_sessions--;
+      pthread_mutex_unlock(&sessions_lock);
+      return 0; // Sucesso
     }
-    pthread_mutex_unlock(&sessions_lock);
-    fprintf(stderr, "Session not found.\n");
-    return -1; // Seção não encontrada
+  }
+  pthread_mutex_unlock(&sessions_lock);
+  fprintf(stderr, "Session not found.\n");
+  return -1; // Sessão não encontrada
 }
+*/
 
+/*
 // Função para verificar se uma SESSÃO ESTÁ ATIVA?
 int is_session_active(const char* client_pipe_path) {
-    pthread_mutex_lock(&sessions_lock);
-    for (size_t i = 0; i < active_sessions; i++) {
-        if (strcmp(active_sessions_list[i], client_pipe_path) == 0) {
-            pthread_mutex_unlock(&sessions_lock);
-            fprintf(stderr, "Session active.\n");
-            return 1; // Sessão ativa
-        }
+  pthread_mutex_lock(&sessions_lock);
+  for (size_t i = 0; i < active_sessions; i++) {
+    if (strcmp(active_sessions_list[i], client_pipe_path) == 0) {
+      pthread_mutex_unlock(&sessions_lock);
+      fprintf(stderr, "Session active.\n");
+      return 1; // Sessão ativa
     }
-    pthread_mutex_unlock(&sessions_lock);
-    fprintf(stderr, "Session not active.\n");
-    return 0; // Sessão não ativa
+  }
+  pthread_mutex_unlock(&sessions_lock);
+  fprintf(stderr, "Session not active.\n");
+  return 0; // Sessão não ativa
 }
+*/
 
 // ------MÚLTIPLAS THREADS------
 
@@ -371,23 +376,23 @@ static void dispatch_threads(DIR* dir) {
   }
 
   // Ler o FIFO de registo
-  int registration_fifo_fd = open(registration_fifo_name_global, O_RDONLY );
-  if (registration_fifo_fd == -1) { 
+  server_fifo_fd_global = open(registration_fifo_name_global, O_RDONLY );
+  if (server_fifo_fd_global == -1) { 
     free(threads);
     return;
   }
 
   char buffer[1024];  // Tamanho do buffer para dados recebidos
   ssize_t bytes_read;
-  while ((bytes_read = read(registration_fifo_fd, buffer, sizeof(buffer) - 1)) > 0) {
-      buffer[bytes_read] = '\0';  // Garantir que a string seja terminada corretamente
-      printf("Received from FIFO: %s\n", buffer);
+  while ((bytes_read = read(server_fifo_fd_global, buffer, sizeof(buffer) - 1)) > 0) {
+    buffer[bytes_read] = '\0';  // Garantir que a string seja terminada corretamente
+    printf("Received from FIFO: %s\n", buffer);
   }
 
   if (bytes_read == -1) {
-      perror("Error reading from FIFO");
+    perror("Error reading from FIFO");
   }
-  close(registration_fifo_fd);
+  close(server_fifo_fd_global);
 
 
   // Aguarda a conclusão das threads
@@ -411,16 +416,17 @@ static void dispatch_threads(DIR* dir) {
 
 // Função para limpar o FIFO ao sair
 void cleanup_fifo_server() {
-    if (access(registration_fifo_name_global, F_OK) != -1) { // Verifica se o FIFO existe
-        if (unlink(registration_fifo_name_global) == -1) {
-            perror("Failed to unlink FIFO");
-        } else {
-            fprintf(stdout, "FIFO %s removed\n", registration_fifo_name_global);
-        }
+  if (access(registration_fifo_name_global, F_OK) != -1) { // Verifica se o FIFO existe
+    if (unlink(registration_fifo_name_global) == -1) {
+      perror("Failed to unlink FIFO");
     } else {
-        fprintf(stdout, "FIFO %s does not exist, skipping removal.\n", registration_fifo_name_global);
+      fprintf(stdout, "FIFO %s removed\n", registration_fifo_name_global);
     }
-    pthread_cancel(connection_manager_thread);
+  } else {
+    fprintf(stdout, "FIFO %s does not exist, skipping removal.\n", registration_fifo_name_global);
+  }
+  pthread_cancel(connection_manager_thread);
+  pthread_join(connection_manager_thread, NULL);
 }
 
 
@@ -435,6 +441,10 @@ int main(int argc, char** argv) {
     write_str(STDERR_FILENO, " <registration_fifo_name_global> \n");
     return 1;
   }
+
+  // Registra a função de limpeza do FIFO para ser chamada ao sair do programa
+  // Quando o programa recebe um sinal SIGINT (Ctrl+C), a função cleanup_fifo_server é chamada
+  //signal(SIGINT, cleanup_fifo_server);
 
   jobs_directory = argv[1];  // Define o argumento 1 como o diretório de jobs
   char* endptr;
@@ -459,6 +469,23 @@ int main(int argc, char** argv) {
     return 0;
   }
 
+  // Inicializa o KVS (armazenamento de chave-valor)
+  if (kvs_init()) {
+    write_str(STDERR_FILENO, "Failed to initialize KVS\n");
+    return 1;
+  }
+
+  // Abre o diretório de jobs
+  DIR* dir = opendir(argv[1]);
+  if (dir == NULL) {
+    fprintf(stderr, "Failed to open directory: %s\n", argv[1]);
+    return 0;
+  }
+
+  printf("INTIALIZING CLIENT THREADS\n");
+  start_client_threads(MAX_SESSIONS);
+  printf("Finished CLIENT THREADS\n");
+
   registration_fifo_name_global = argv[4];  // Define o argumento 4 como o FIFO de registo
 
   // Criar o FIFO de registro com o caminho de registo_fifo_name_global
@@ -470,35 +497,11 @@ int main(int argc, char** argv) {
   }
   fprintf(stdout, "Registration FIFO created: %s\n", registration_fifo_name_global);
 
-  // Registra a função de limpeza do FIFO para ser chamada ao sair do programa
-  // Quando o programa recebe um sinal SIGINT (Ctrl+C), a função cleanup_fifo_server é chamada
-  signal(SIGINT, cleanup_fifo_server);
-
-  // Inicializa o KVS (armazenamento de chave-valor)
-  if (kvs_init()) {
-    write_str(STDERR_FILENO, "Failed to initialize KVS\n");
-    return 1;
-  }
-
-  // Abrir o FIFO de conexão do servidor
-  int server_fifo_fd = open(registration_fifo_name_global, O_RDONLY);
-  if (server_fifo_fd == -1) {
-    perror("Failed to open registration FIFO");
-    return 1;
-  }
-
   // Criar a thread do gerenciador de conexões
-  if (pthread_create(&connection_manager_thread, NULL, connection_manager, &server_fifo_fd) != 0) {
+  if (pthread_create(&connection_manager_thread, NULL, connection_manager, NULL) != 0) {
     perror("Failed to create connection manager thread");
-    close(server_fifo_fd);
+    close(server_fifo_fd_global);
     return 1;
-  }
-
-  // Abre o diretório de jobs
-  DIR* dir = opendir(argv[1]);
-  if (dir == NULL) {
-    fprintf(stderr, "Failed to open directory: %s\n", argv[1]);
-    return 0;
   }
 
   // Criar e gerenciar múltiplas threads que processarão os arquivos no diretório
@@ -513,18 +516,18 @@ int main(int argc, char** argv) {
   // Aguardar conclusão de backups ativos
   while (active_backups > 0) {
     wait(NULL);
-    active_backups--;
+    --active_backups;
   }
 
   // Aguardar a conclusão da thread do gerenciador de conexões
   if (pthread_join(connection_manager_thread, NULL) != 0) {
     perror("Failed to join connection manager thread");
-    close(server_fifo_fd);
+    close(server_fifo_fd_global);
     return 1;
   }
 
   // Fechar o FIFO de conexão do servidor
-  close(server_fifo_fd);
+  close(server_fifo_fd_global);
 
   // Terminar o KVS
   kvs_terminate();
@@ -532,155 +535,163 @@ int main(int argc, char** argv) {
   return 0;
 }
 
-void* connection_manager(void* arg) {
-    int server_fifo_fd = *(int*)arg;
-    char buffer[256];
+void* connection_manager() {
+  char buffer[256];
 
-    while (1) {
-        ssize_t bytes_read = read(server_fifo_fd, buffer, sizeof(buffer) - 1);
-        if (bytes_read > 0) {
-            buffer[bytes_read] = '\0'; // Garante terminação da string
-            char command[2], req_path[256], resp_path[256], notif_path[256];
-            sscanf(buffer, "%1s|%255[^|]|%255[^|]|%255s", command, req_path, resp_path, notif_path);
-            
-            if (strcmp(command, "1") == 0) { 
-                // Verificação se há espaço para nova sessão
-                char response[2];  // Armazena a resposta a ser enviada (Sucesso ou Erro)
+  server_fifo_fd_global = open(registration_fifo_name_global, O_RDONLY, O_NONBLOCK);
+  if (server_fifo_fd_global == -1) {
+    perror("Failed to open registration FIFO");
+    kill(getpid(), SIGINT);
+  }
 
-                pthread_mutex_lock(&sessions_lock);
-                if (active_sessions >= MAX_SESSIONS) {
-                    // Se o servidor não puder aceitar mais sessões, enviar erro e desbloquear
-                    response[0] = '0';  // Código de erro (máximo de sessões atingido)
-                    write(server_fifo_fd, response, sizeof(response));
-                    pthread_mutex_unlock(&sessions_lock);
-                    continue;
-                }
+  while (1) {
+    ssize_t bytes_read = read(server_fifo_fd_global, buffer, sizeof(buffer) - 1);
+    if (bytes_read > 0) {
+      buffer[bytes_read] = '\0'; // Garante terminação da string
+      char command[2], req_path[256], resp_path[256], notif_path[256];
+      sscanf(buffer, "%1s|%255[^|]|%255[^|]|%255s", command, req_path, resp_path, notif_path);
+      
+      if (strcmp(command, "1") == 0) { 
+        // Verificação se há espaço para nova sessão
+        char response[2];  // Armazena a resposta a ser enviada (Sucesso ou Erro)
 
-                // Se houver espaço, criar a nova sessão
-                active_sessions++;
-                response[0] = '1';  // Confirmação de sucesso
-
-                // Enviar resposta ao cliente
-                write(server_fifo_fd, response, sizeof(response));
-                pthread_mutex_unlock(&sessions_lock);
-
-                // Criar novo cliente e adicionar à lista de clientes
-                Cliente* novo_cliente = (Cliente*)malloc(sizeof(Cliente));
-                if (novo_cliente == NULL) {
-                    perror("Erro ao alocar memória para novo cliente");
-                    continue;
-                }
-
-                char* client_id = strrchr(req_path, 'q');
-                novo_cliente->id = atoi(client_id);  // ID do cliente
-                strncpy(novo_cliente->fifo_request, req_path, MAX_STRING_SIZE);
-                strncpy(novo_cliente->fifo_response, resp_path, MAX_STRING_SIZE);
-                strncpy(novo_cliente->fifo_notify, notif_path, MAX_STRING_SIZE);
-                memset(novo_cliente->chaves_subscritas, 0, sizeof(novo_cliente->chaves_subscritas)); // Inicializa as chaves como 0
-                novo_cliente->next = NULL;
-
-                buffer_put(&client_buffer, novo_cliente);
-
-                // Adicionar o cliente à lista ligada
-                pthread_mutex_lock(&sessions_lock);
-                novo_cliente->next = clients;
-                clients = novo_cliente;
-                pthread_mutex_unlock(&sessions_lock);
-
-            }
+        pthread_mutex_lock(&sessions_lock);
+        if (active_sessions >= MAX_SESSIONS) {
+          // Se o servidor não puder aceitar mais sessões, enviar erro e desbloquear
+          response[0] = '0';  // Código de erro (máximo de sessões atingido)
+          write(server_fifo_fd_global, response, sizeof(response));
+          pthread_mutex_unlock(&sessions_lock);
+          continue;
         }
+
+        // Se houver espaço, criar a nova sessão
+        active_sessions++;
+        response[0] = '1';  // Confirmação de sucesso
+
+        // Enviar resposta ao client
+        write(server_fifo_fd_global, response, sizeof(response));
+        pthread_mutex_unlock(&sessions_lock);
+
+        // Criar novo client e adicionar à lista de clientes
+        Client* novo_cliente = (Client*)malloc(sizeof(Client));
+        if (novo_cliente == NULL) {
+          perror("Erro ao alocar memória para novo client");
+          continue;
+        }
+
+        char* client_id = strrchr(req_path, 'q');
+        novo_cliente->id = atoi(client_id);  // ID do client
+        strncpy(novo_cliente->fifo_request, req_path, MAX_STRING_SIZE);
+        strncpy(novo_cliente->fifo_response, resp_path, MAX_STRING_SIZE);
+        strncpy(novo_cliente->fifo_notify, notif_path, MAX_STRING_SIZE);
+        memset(novo_cliente->chaves_subscritas, 0, sizeof(novo_cliente->chaves_subscritas)); // Inicializa as chaves como 0
+
+        buffer_put(&client_buffer, novo_cliente);
+      }
     }
-    return NULL;
+  }
+  return NULL;
 }
 
 
-void handle_connect(Cliente* novo_cliente) {
-    int req_fd = open(novo_cliente->fifo_request, O_RDONLY);
-    int resp_fd = open(novo_cliente->fifo_response, O_WRONLY);
-    int notif_fd = open(novo_cliente->fifo_notify, O_WRONLY);
+void handle_connect(Client* novo_cliente) {
+  int req_fd = open(novo_cliente->fifo_request, O_RDONLY);
+  int resp_fd = open(novo_cliente->fifo_response, O_WRONLY);
+  int notif_fd = open(novo_cliente->fifo_notify, O_WRONLY);
 
-    if (req_fd == -1 || resp_fd == -1 || notif_fd == -1) {
-        perror("Erro ao abrir FIFOs do cliente");
-        
-        // Responder ao cliente com erro
-        char error_message[] = "1"; // erro = 1
-        write(resp_fd, error_message, strlen(error_message));
-        if (req_fd != -1) close(req_fd);
-        if (resp_fd != -1) close(resp_fd);
-        if (notif_fd != -1) close(notif_fd);
-        return;
-    }
+  if (req_fd == -1 || resp_fd == -1 || notif_fd == -1) {
+    perror("Erro ao abrir FIFOs do client");
+    
+    // Responder ao client com erro
+    char error_message[] = "1"; // erro = 1
+    write(resp_fd, error_message, strlen(error_message));
+    if (req_fd != -1) close(req_fd);
+    if (resp_fd != -1) close(resp_fd);
+    if (notif_fd != -1) close(notif_fd);
+    return;
+  }
 
-    // Responder ao cliente com sucesso
-    char success_message[] = "0"; // sucesso = 0
-    write(resp_fd, success_message, strlen(success_message));
+  // Responder ao client com sucesso
+  char success_message[] = "0"; // sucesso = 0
+  write(resp_fd, success_message, strlen(success_message));
 
-    // Passar os descritores para uma thread dedicada
-    novo_cliente->req_pipe_fd = req_fd;
-    novo_cliente->resp_pipe_fd = resp_fd;
-    novo_cliente->notif_pipe_fd = notif_fd;
+  // Passar os descritores para uma thread dedicada
+  novo_cliente->req_pipe_fd = req_fd;
+  novo_cliente->resp_pipe_fd = resp_fd;
+  novo_cliente->notif_pipe_fd = notif_fd;
 }
 
-void client_handler(Cliente* novo_client) {
-    Cliente* client = buffer_get(&client_buffer);
-    char buffer[1024];
-    handle_connect(novo_client);
-    while (1) {
-        // Ler o pedido do cliente
-        ssize_t n = read(client->req_pipe_fd, buffer, sizeof(buffer));
-        if (n <= 0) break;  // Desconexão ou erro
+void client_handler(Client* client) {
+  char buffer[1024];
+  handle_connect(client);
+  while (1) {
+    // Ler o pedido do client
+    ssize_t n = read(client->req_pipe_fd, buffer, sizeof(buffer));
+    if (n <= 0) break;  // Desconexão ou erro
 
-        // Processar o pedido
-        handle_client_request(client->id, buffer);
-
-        // Responder ao cliente
-        write(client->resp_pipe_fd, "0", 1);  // Sucesso
-    }
-
-    // Fechar FIFOs
-    close(client->req_pipe_fd);
-    close(client->resp_pipe_fd);
-    close(client->notif_pipe_fd);
-
-    // Remover cliente da lista ligada
-    //remove_session(client->fifo_request);
-
-    // Liberar memória
-    free(client);
-
-    pthread_mutex_lock(&thread_mutex);
-    active_threads--;
-    pthread_cond_signal(&thread_cond);
-    pthread_mutex_unlock(&thread_mutex);
-
-    return NULL;
+    // Processar o pedido
+    int response = handle_client_request(client->id, buffer);
+    char mensagem[32];
+    snprintf(mensagem, sizeof(mensagem), "OP_CODE_CONNECT|%d", response);
+    // Responder ao client
+    write(client->resp_pipe_fd, mensagem, 4);  // Sucesso
+  }
 }
 
 // ------PEDIDOS CLIENTE (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT)------
-// Função principal para lidar com os pedidos do cliente
-void handle_client_request(int client_id, const char* command) { // o connect é enviado diretamente para o servidor
-    char command_type[MAX_STRING_SIZE]; // Armazena o tipo de comando (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT)
-    char argument[MAX_STRING_SIZE];  // Armazena o argumento do comando (chave)
+// Função principal para lidar com os pedidos do client
+int handle_client_request(int client_id, const char* command) { // o connect é enviado diretamente para o servidor
+  char command_type[MAX_STRING_SIZE]; // Armazena o tipo de comando (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT)
+  char argument[MAX_STRING_SIZE];  // Armazena o argumento do comando (chave)
+  // Dividir o comando em comando e argumento usando strtok
+  char command_copy[MAX_STRING_SIZE];
+  strncpy(command_copy, command, MAX_STRING_SIZE - 1);
+  command_copy[MAX_STRING_SIZE - 1] = '\0';
+  char* token = strtok(command_copy, "|");
+  if (token == NULL) {
+    fprintf(stderr, "Comando inválido: %s\n", command);
+    return 1;
+  }
+  strncpy(command_type, token, MAX_STRING_SIZE);
 
-    // Dividir o comando em comando e argumento "SUBSCRIBE chave"
-    if (sscanf(command, "%s %s", command_type, argument) < 2) {
-        fprintf(stderr, "Comando inválido: %s\n", command);
-        return;
-    }
+  token = strtok(NULL, "|");
+  if (token == NULL) {
+    fprintf(stderr, "Argumento inválido: %s\n", command);
+    return 1;
+  }
+  strncpy(argument, token, MAX_STRING_SIZE);
 
-    // Processamento do comando
-    if (strcmp(command_type, "3") == 0) { //SUBSCRIBE==3
-        handle_subscribe(client_id, argument);
-        printf("Cliente %d subscrived\n", client_id);
-    } else if (strcmp(command_type, "4") == 0) { //UNSUBSCRIBE==4
-        handle_unsubscribe(client_id, argument);
-        printf("Cliente %d unsubscrived\n", client_id);
-    } else if (strcmp(command_type, "2") == 0) { //DISCONNECT==2
-        //handle_disconnect(client_id);
-        printf("Cliente %d disconnected\n", client_id);
-    } else {
-        fprintf(stderr, "Comando desconhecido: %s\n", command_type);
+  Client* client = NULL;
+  // Procurar o client no buffer usando o ID
+  for (int i = 0; i < MAX_SESSIONS; i++) {
+    if (client_buffer.buffer[i] != NULL && client_buffer.buffer[i]->id == client_id) {
+      client = client_buffer.buffer[i];
+      break;
     }
+  }
+  if (client == NULL) {
+    // Client não encontrado
+    fprintf(stderr, "Client não encontrado. ID: %d\n", client->id);
+    return 1;  // Erro
+  }
+
+  int command_code = atoi(command_type);
+
+  // Processamento do comando
+  if (command_code == OP_CODE_SUBSCRIBE) {
+    handle_subscribe(client, argument);
+    printf("Client %d subscribed\n", client_id);
+  } else if (command_code == OP_CODE_UNSUBSCRIBE) {
+    handle_unsubscribe(client, argument);
+    printf("Client %d unsubscribed\n", client_id);
+  } else if (command_code == OP_CODE_DISCONNECT) {
+    handle_disconnect(client);
+    printf("Client %d disconnected\n", client_id);
+  } else {
+    fprintf(stderr, "Unknown command: %d\n", command_code);
+    return 1;
+  }
+  return 0;
 }
 
 /*
@@ -689,162 +700,132 @@ problemas:
 -ele está a divir o comando em comnado e argumento ou seja o comando é algo como "SUBSCRIBE chave"
 -função não está definida
 -funções handle_subscribe, handle_unsubscribe e handle_disconnect não existem
--só há estes três comandos que o cliente pode pedir?
+-só há estes três comandos que o client pode pedir?
 */
 
 
-int handle_subscribe(int client_id, const char* key) { 
-    // Procurar o cliente na lista de clientes ativos usando o ID
-    Cliente* cliente = NULL;
-    Cliente* current = clients;  // active_clients é a lista de clientes ativos
-
-    // Procurar o cliente pelo ID na lista ligada
-    while (current != NULL) {
-        if (current->id == client_id) {
-            cliente = current;
-            break;
-        }
-        current = current->next;
+int handle_subscribe(Client* client, const char* key) { 
+  // Verificar se a chave já está subscrita pelo client
+  for (size_t i = 0; i < MAX_KEYS; i++) {
+    if (strcmp(client->chaves_subscritas[i], key) == 0) {
+      fprintf(stderr, "Chave já subscrita.\n");
+      return 1;
     }
+  }
 
-    if (cliente == NULL) {
-        // Cliente não encontrado
-        fprintf(stderr, "Cliente não encontrado. ID: %d\n", client_id);
-        return 1;  // Erro
+  // Procurar uma posição livre para armazenar a chave subscrita
+  for (size_t i = 0; i < MAX_KEYS; i++) {
+    if (client->chaves_subscritas[i][0] == '\0') { // Se encontrar uma posição livre
+      strncpy(client->chaves_subscritas[i], key, MAX_STRING_SIZE - 1);
+      return 0;
     }
+  }
 
-     // Verificar se a chave já está subscrita pelo cliente
-    for (size_t i = 0; i < MAX_KEYS; i++) {
-        if (strcmp(cliente->chaves_subscritas[i], key) == 0) {
-            return 1;
-        }
+  // Se não houver espaço para mais subscrições
+  fprintf(stderr, "Limite de subscrições atingido para o client. %d\n", client->id);
+  return 1;  // Erro
+}
+
+int handle_unsubscribe(Client* client, const char* key) {
+  // Verificar se o client está subscrito na chave
+  int found = 0;  // Flag para verificar se a chave foi encontrada
+  for (size_t i = 0; i < MAX_KEYS; i++) {
+    if (strcmp(client->chaves_subscritas[i], key) == 0) {
+      // Encontramos a chave, vamos removê-la
+      memset(client->chaves_subscritas[i], 0, MAX_STRING_SIZE);  // Limpa a chave
+      found = 1;
+      break;
     }
+  }
 
-    // Procurar uma posição livre para armazenar a chave subscrita
-    for (size_t i = 0; i < MAX_KEYS; i++) {
-        if (cliente->chaves_subscritas[i][0] == '\0') { // Se encontrar uma posição livre
-            strncpy(cliente->chaves_subscritas[i], key, MAX_STRING_SIZE - 1);
-            return 0;
-        }
-    }
-
-    // Se não houver espaço para mais subscrições
-    fprintf(stderr, "Limite de subscrições atingido para o cliente %d\n", client_id);
+  if (!found) {
+    fprintf(stderr, "Chave não subscrita.\n");
+    // Client não está subscrito na chave
     return 1;  // Erro
+  }
+
+  return 0;  // Sucesso
 }
 
+void handle_disconnect(Client* client) {
 
-int handle_unsubscribe(int client_id, const char* key) {
-    // Procurar o cliente na lista de clientes ativos usando o ID
-    Cliente* cliente = NULL;
-    Cliente* current = clients;  // active_clients é a lista de clientes ativos
-
-    // Procurar o cliente pelo ID na lista ligada
-    while (current != NULL) {
-        if (current->id == client_id) {
-            cliente = current;
-            break;
-        }
-        current = current->next;
-    }
-
-    if (cliente == NULL) {
-        // Cliente não encontrado
-        return 1;  // Erro
-    }
-
-    // Verificar se o cliente está subscrito na chave
-    int found = 0;  // Flag para verificar se a chave foi encontrada
-    for (size_t i = 0; i < MAX_KEYS; i++) {
-        if (strcmp(cliente->chaves_subscritas[i], key) == 0) {
-            // Encontramos a chave, vamos removê-la
-            memset(cliente->chaves_subscritas[i], 0, MAX_STRING_SIZE);  // Limpa a chave
-            found = 1;
-            break;
-        }
-    }
-
-    if (!found) {
-        // Cliente não está subscrito na chave
-        return 1;  // Erro
-    }
-
-    return 0;  // Sucesso
+  // Fechar FIFOs
+  close(client->req_pipe_fd);
+  close(client->resp_pipe_fd);
+  close(client->notif_pipe_fd);
 }
 
-
-// Server precisa buffer producer consumer, cada client tem ma thread dedicada. 
-// Dar start ás threads dos clientes e depois com a ajuda do buffer producer consumer,
-// a thread manager tem de passar os clients para a proxima thread disponível
-
-void buffer_put(Buffer* buffer, Cliente* client) {
+void buffer_put(Buffer* buffer, Client* client) {
   pthread_mutex_lock(&buffer->mutex);
-  while (buffer->count == BUFFER_SIZE) {
+  while (buffer->count == MAX_SESSIONS) {
     pthread_cond_wait(&buffer->not_full, &buffer->mutex);
   }
   buffer->buffer[buffer->in] = client;
-  buffer->in = (buffer->in + 1) % BUFFER_SIZE;
+  buffer->in = (buffer->in + 1) % MAX_SESSIONS;
   buffer->count++;
   pthread_cond_signal(&buffer->not_empty);
   pthread_mutex_unlock(&buffer->mutex);
 }
 
-Cliente* buffer_get(Buffer* buffer) {
+Client* buffer_get(Buffer* buffer) {
   pthread_mutex_lock(&buffer->mutex);
   while (buffer->count == 0) {
     pthread_cond_wait(&buffer->not_empty, &buffer->mutex);
   }
-  Cliente* client = buffer->buffer[buffer->out];
-  buffer->out = (buffer->out + 1) % BUFFER_SIZE;
+  Client* client = buffer->buffer[buffer->out];
+  buffer->out = (buffer->out + 1) % MAX_SESSIONS;
   buffer->count--;
   pthread_cond_signal(&buffer->not_full);
   pthread_mutex_unlock(&buffer->mutex);
   return client;
 }
 
-void buffer_remove(Buffer* buffer, Cliente* client) {
+void buffer_remove(Buffer* buffer, Client* client) {
   pthread_mutex_lock(&buffer->mutex);
   size_t i = buffer->out;
   while (i != buffer->in) {
     if (buffer->buffer[i] == client) {
-      for (size_t j = i; j != buffer->in; j = (j + 1) % BUFFER_SIZE) {
-        buffer->buffer[j] = buffer->buffer[(j + 1) % BUFFER_SIZE];
+      for (size_t j = i; j != buffer->in; j = (j + 1) % MAX_SESSIONS) {
+        buffer->buffer[j] = buffer->buffer[(j + 1) % MAX_SESSIONS];
       }
-      buffer->in = (buffer->in - 1 + BUFFER_SIZE) % BUFFER_SIZE;
+      buffer->in = (buffer->in - 1 + MAX_SESSIONS) % MAX_SESSIONS;
       buffer->count--;
       pthread_cond_signal(&buffer->not_full);
       break;
     }
-    i = (i + 1) % BUFFER_SIZE;
+    i = (i + 1) % MAX_SESSIONS;
   }
   pthread_mutex_unlock(&buffer->mutex);
 }
 
 void start_client_threads(size_t num_threads) {
-pthread_t* threads = malloc(num_threads * sizeof(pthread_t));
-if (threads == NULL) {
-  fprintf(stderr, "Failed to allocate memory for threads\n");
-  return;
-}
-for (size_t i = 0; i < num_threads; i++) {
-  if (pthread_create(&threads[i], NULL, client_manager_pointer, NULL) != 0) {
-    fprintf(stderr, "Failed to create thread %zu\n", i);
-    free(threads);
+  pthread_t* threads = malloc(num_threads * sizeof(pthread_t));
+  if (threads == NULL) {
+    fprintf(stderr, "Failed to allocate memory for threads\n");
     return;
   }
+  for (size_t i = 0; i < num_threads; i++) {
+    if (pthread_create(&threads[i], NULL, client_manager, NULL) != 0) {
+      fprintf(stderr, "Failed to create thread %zu\n", i);
+      free(threads);
+      return;
+    }
+  }
 }
-for (size_t i = 0; i < num_threads; i++) {
-  pthread_join(threads[i], NULL);
-}
-free(threads);
-}
-void* client_manager_pointer(void* arg) {
+
+void* client_manager() {
   while (1) {
-    Cliente* client = buffer_get(&client_buffer);
+    Client* client = buffer_get(&client_buffer);
     client_handler(client);
-    
+
     // Remove client from buffer
     buffer_remove(&client_buffer, client);
+
+    free(client);
+    pthread_mutex_lock(&thread_mutex);
+    active_threads--;
+    pthread_cond_signal(&thread_cond);
+    pthread_mutex_unlock(&thread_mutex);
   }
   return NULL;
 }

@@ -21,23 +21,23 @@
 
 // Função que lida com notificações - thread
 void* notification_handler(void* arg) {
-    int notif_pipe_fd = *(int*)arg;  // Cast e desreferenciação do argumento para obter o descritor do pipe
-    char buffer[256];
+  int notif_pipe_fd = *(int*)arg;  // Cast e desreferenciação do argumento para obter o descritor do pipe
+  char buffer[256];
 
-    while (1) {
-        ssize_t bytes_read = read(notif_pipe_fd, buffer, sizeof(buffer) - 1); // Read lê dados do descritor de arquivo notif_pipe_fd para o buffer
-        if (bytes_read > 0) {
-            buffer[bytes_read] = '\0';  // Adiciona o terminador nulo na string
-            printf("Notification: %s\n", buffer); // Imprime a notificação lida
-        } else if (bytes_read == 0) {
-            // Pipe foi fechado
-            break;
-        } else {
-            perror("Error reading notifications");
-            break;
-        }
+  while (1) {
+    ssize_t bytes_read = read(notif_pipe_fd, buffer, sizeof(buffer) - 1); // Read lê dados do descritor de arquivo notif_pipe_fd para o buffer
+    if (bytes_read > 0) {
+      buffer[bytes_read] = '\0';  // Adiciona o terminador nulo na string
+      printf("Notification: %s\n", buffer); // Imprime a notificação lida
+    } else if (bytes_read == 0) {
+      printf("Notification pipe closed\n");
+      break;
+    } else {
+      perror("Error reading notifications");
+      break;
     }
-    return NULL;
+  }
+  return NULL;
 }
 
 

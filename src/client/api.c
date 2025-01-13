@@ -12,7 +12,9 @@
 #include <sys/types.h>
 #include <sys/wait.h>  
 #include <unistd.h>
+
 #include "api.h"
+#include "src/common/protocol.h"
 
 // Armazenamento dos caminhos dos fifos como variaveis globais
 static char g_req_pipe_path[PATH_MAX];
@@ -27,7 +29,7 @@ static int g_notif_pipe_fd = -1;
 static int g_server_pipe_fd = -1;
 
 int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char const* server_pipe_path,
-                char const* notif_pipe_path, int* notif_pipe) { 
+    char const* notif_pipe_path, int* notif_pipe) { 
 
     // Guardar os paths em variáveis globais
     strncpy(g_req_pipe_path, req_pipe_path, PATH_MAX - 1);
@@ -45,8 +47,8 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
     }
 
     // Criar a mensagem de pedido
-    char message[MAX_PIPE_PATH_LENGTH * 3 + 3 + sizeof(int)];  
-    snprintf(message, sizeof(message), "1|%s|%s|%s", req_pipe_path, resp_pipe_path, notif_pipe_path);
+    char message[PATH_MAX * 3 + 3 + sizeof(int)];  
+    snprintf(message, sizeof(message), "%d|%s|%s|%s", OP_CODE_CONNECT, req_pipe_path, resp_pipe_path, notif_pipe_path);
 
     // Enviar o pedido para o servidor
     if (write(g_server_pipe_fd, message, strlen(message)) == -1) {
@@ -54,7 +56,6 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
         close(g_server_pipe_fd);
         return 1;
     }
-
 
     // Criar os FIFOs, caso não existam
     if (mkfifo(req_pipe_path, 0666) == -1 && errno != EEXIST) {
@@ -139,8 +140,8 @@ int kvs_connect(char const* req_pipe_path, char const* resp_pipe_path, char cons
  
 int kvs_disconnect(void) {
     // Criar e enviar a mensagem de desconexão
-    char message[MAX_PIPE_PATH_LENGTH * 3 + 3 + sizeof(int)];  
-    snprintf(message, sizeof(message), "2|%s|%s|%s", g_req_pipe_path, g_resp_pipe_path, g_notif_pipe_path);
+    char message[PATH_MAX * 3 + 3 + sizeof(int)];  
+    snprintf(message, sizeof(message), "%d|%s|%s|%s", OP_CODE_DISCONNECT, g_req_pipe_path, g_resp_pipe_path, g_notif_pipe_path);
     if (write(g_req_pipe_fd, message, strlen(message)) == -1) {
         perror("Erro ao enviar pedido de desconexão");
         return 1;
@@ -190,7 +191,7 @@ int kvs_subscribe(const char* key) {
 
     // Criar a mensagem de subscrição (formato: "3|chave")
     char message[MAX_PIPE_PATH_LENGTH * 3 + 3 + sizeof(int)];
-    snprintf(message, sizeof(message), "3|%s", key);
+    snprintf(message, sizeof(message), "%d|%s", OP_CODE_SUBSCRIBE, key);
 
     // Enviar a mensagem para o servidor
     if (write(g_req_pipe_fd, message, strlen(message)) == -1) {
@@ -219,7 +220,7 @@ int kvs_unsubscribe(const char* key) {
 
     // Criar a mensagem de desubscrição (formato: "4|chave")
     char message[MAX_PIPE_PATH_LENGTH * 3 + 3 + sizeof(int)];
-    snprintf(message, sizeof(message), "4|%s", key);
+    snprintf(message, sizeof(message), "%d|%s", OP_CODE_UNSUBSCRIBE, key);
 
     // Enviar a mensagem para o servidor
     if (write(g_req_pipe_fd, message, strlen(message)) == -1) {
