@@ -25,12 +25,16 @@ struct SharedData {
 };
 
 typedef struct Cliente {
-    int id;  // ID do processo cliente
-    char fifo_request[MAX_STRING_SIZE];   // Caminho do FIFO de pedidos
-    char fifo_response[MAX_STRING_SIZE];  // Caminho do FIFO de respostas
-    char fifo_notify[MAX_STRING_SIZE];    // Caminho do FIFO de notificações
-    char chaves_subscritas[MAX_KEYS][MAX_STRING_SIZE];  // Chaves subscritas
-    struct Cliente* next;
+  int id;  // ID do processo cliente
+  char fifo_request[MAX_STRING_SIZE];   // Caminho do FIFO de pedidos
+  char fifo_response[MAX_STRING_SIZE];  // Caminho do FIFO de respostas
+  char fifo_notify[MAX_STRING_SIZE];    // Caminho do FIFO de notificações
+  char chaves_subscritas[MAX_KEYS][MAX_STRING_SIZE];  // Chaves subscritas
+  pthread_t thread_id;  // Thread ID for the client handler
+  int req_pipe_fd;  // File descriptor for request FIFO
+  int resp_pipe_fd; // File descriptor for response FIFO
+  int notif_pipe_fd; // File descriptor for notification FIFO
+  struct Cliente* next;
 } Cliente;
 
 Cliente* clients = NULL; 
@@ -42,6 +46,7 @@ pthread_mutex_t sessions_lock = PTHREAD_MUTEX_INITIALIZER;
 int active_threads = 0;
 pthread_mutex_t thread_mutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t thread_cond = PTHREAD_COND_INITIALIZER;
+pthread_t connection_manager_thread;
 
 size_t active_backups = 0;     // Number of active backups
 size_t max_backups;            // Maximum allowed simultaneous backups
@@ -52,10 +57,12 @@ char* jobs_directory = NULL;
 char* registration_fifo_name_global = NULL; // Global variable for the FIFO name //cainho do fifo de registo!
 char active_sessions_list[MAX_SESSIONS][PATH_MAX]; // LISTA DE SESSÕES ATIVAS
 // Declarações das funções
-int handle_subscribe(int client_id, const char* key);
-int handle_unsubscribe(int client_id, const char* key);
-//void* client_handler(void* arg);
-//void handle_connection_requests(int req_fd);
+//int handle_subscribe(int client_id, const char* key);
+//int handle_unsubscribe(int client_id, const char* key);
+void* client_handler(void* arg);
+void* connection_manager(void* arg);
+void handle_connect(Cliente* novo_cliente);
+void handle_connection_requests(int req_fd);
 
 
 // ------JOBS------ (1ªentrega)
@@ -385,6 +392,7 @@ void cleanup_fifo_server() {
     } else {
         fprintf(stdout, "FIFO %s does not exist, skipping removal.\n", registration_fifo_name_global);
     }
+    pthread_cancel(connection_manager_thread);
 }
 
 
@@ -444,6 +452,20 @@ int main(int argc, char** argv) {
     return 1;
   }
 
+  // Abrir o FIFO de conexão do servidor
+  int server_fifo_fd = open(registration_fifo_name_global, O_RDONLY);
+  if (server_fifo_fd == -1) {
+    perror("Failed to open registration FIFO");
+    return 1;
+  }
+
+  // Criar a thread do gerenciador de conexões
+  if (pthread_create(&connection_manager_thread, NULL, connection_manager, &server_fifo_fd) != 0) {
+    perror("Failed to create connection manager thread");
+    close(server_fifo_fd);
+    return 1;
+  }
+
   // Abre o diretório de jobs
   DIR* dir = opendir(argv[1]);
   if (dir == NULL) {
@@ -465,6 +487,16 @@ int main(int argc, char** argv) {
     wait(NULL);
     active_backups--;
   }
+
+  // Aguardar a conclusão da thread do gerenciador de conexões
+  if (pthread_join(connection_manager_thread, NULL) != 0) {
+    perror("Failed to join connection manager thread");
+    close(server_fifo_fd);
+    return 1;
+  }
+
+  // Fechar o FIFO de conexão do servidor
+  close(server_fifo_fd);
 
   // Terminar o KVS
   kvs_terminate();
@@ -500,7 +532,8 @@ void handle_client_request(int client_id, const char* command) { // o connect é
 }
 */
 
-/*
+
+
 void* connection_manager(void* arg) {
     int server_fifo_fd = *(int*)arg;
     char buffer[256];
@@ -509,10 +542,10 @@ void* connection_manager(void* arg) {
         ssize_t bytes_read = read(server_fifo_fd, buffer, sizeof(buffer) - 1);
         if (bytes_read > 0) {
             buffer[bytes_read] = '\0'; // Garante terminação da string
-            char command[32], client_id[32], req_path[256], resp_path[256], notif_path[256];
-            sscanf(buffer, "%31[^|]|%31[^|]|%255[^|]|%255[^|]|%255s", command, client_id, req_path, resp_path, notif_path);
+            char command[2], req_path[256], resp_path[256], notif_path[256];
+            sscanf(buffer, "%1s|%255[^|]|%255[^|]|%255s", command, req_path, resp_path, notif_path);
             
-            if (strcmp(command, "CONNECT") == 0) { // QUESTÃO - HÁ COMANDO DE CONNECT?
+            if (strcmp(command, "1") == 0) { 
                 // Verificação se há espaço para nova sessão
                 char response[2];  // Armazena a resposta a ser enviada (Sucesso ou Erro)
 
@@ -540,6 +573,7 @@ void* connection_manager(void* arg) {
                     continue;
                 }
 
+                char* client_id = strrchr(req_path, 'q');
                 novo_cliente->id = atoi(client_id);  // ID do cliente
                 strncpy(novo_cliente->fifo_request, req_path, MAX_STRING_SIZE);
                 strncpy(novo_cliente->fifo_response, resp_path, MAX_STRING_SIZE);
@@ -553,9 +587,8 @@ void* connection_manager(void* arg) {
                 clients = novo_cliente;
                 pthread_mutex_unlock(&sessions_lock);
 
-                // Passar os descritores para uma thread dedicada
-                pthread_t client_thread;
-                pthread_create(&client_thread, NULL, client_handler, novo_cliente);
+                // Call handle_connect to handle the connection
+                handle_connect(novo_cliente);
             }
         }
     }
@@ -563,10 +596,10 @@ void* connection_manager(void* arg) {
 }
 
 
-void handle_connect(const char* client_id, const char* req_path, const char* resp_path, const char* notif_path) {
-    int req_fd = open(req_path, O_RDONLY);
-    int resp_fd = open(resp_path, O_WRONLY);
-    int notif_fd = open(notif_path, O_WRONLY);
+void handle_connect(Cliente* novo_cliente) {
+    int req_fd = open(novo_cliente->fifo_request, O_RDONLY);
+    int resp_fd = open(novo_cliente->fifo_response, O_WRONLY);
+    int notif_fd = open(novo_cliente->fifo_notify, O_WRONLY);
 
     if (req_fd == -1 || resp_fd == -1 || notif_fd == -1) {
         perror("Erro ao abrir FIFOs do cliente");
@@ -584,18 +617,16 @@ void handle_connect(const char* client_id, const char* req_path, const char* res
     write(resp_fd, success_message, strlen(success_message));
 
     // Passar os descritores para uma thread dedicada
-    client_info_t* client = malloc(sizeof(client_info_t));
-    client->req_fd = req_fd;
-    client->resp_fd = resp_fd;
-    client->notif_fd = notif_fd;
-    snprintf(client->id, sizeof(client->id), "%s", client_id);
+    novo_cliente->req_pipe_fd = req_fd;
+    novo_cliente->resp_pipe_fd = resp_fd;
+    novo_cliente->notif_pipe_fd = notif_fd;
 
     pthread_t client_thread;
-    pthread_create(&client_thread, NULL, client_handler, client);
+    pthread_create(&client_thread, NULL, client_handler, novo_cliente);
 }
 
 void* client_handler(void* arg) {
-    client_t* client = (client_t*)arg;
+    Cliente* client = (Cliente*)arg;
     char buffer[1024];
 
     while (1) {
@@ -613,18 +644,25 @@ void* client_handler(void* arg) {
         write(client->resp_pipe_fd, "0", 1);  // Sucesso
     }
 
-    // Fechar FIFOs e liberar memória
+    // Fechar FIFOs
     close(client->req_pipe_fd);
     close(client->resp_pipe_fd);
     close(client->notif_pipe_fd);
+
+    // Remover cliente da lista ligada
+    remove_session(client->fifo_request);
+
+    // Liberar memória
     free(client);
+
     pthread_mutex_lock(&thread_mutex);
     active_threads--;
     pthread_cond_signal(&thread_cond);
     pthread_mutex_unlock(&thread_mutex);
+
     return NULL;
 }
-*/
+
 
 /*
 problemas:

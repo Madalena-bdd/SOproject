@@ -43,7 +43,7 @@ void* notification_handler(void* arg) {
 
 int main(int argc, char* argv[]) {
 
-  if (argc < 3) { //testar com 4 argumentos!!!
+  if (argc < 3) { 
     fprintf(stderr, "Usage: %s <client_unique_id> <register_pipe_path>\n", argv[0]);
     return 1;
   }
@@ -60,8 +60,6 @@ int main(int argc, char* argv[]) {
 
   char* server_pipe_path = argv[2]; // Caminho do FIFO do servidor
 
-
-  //FIX MEEEE: "notif_pipe_fd" variável não utilizada!
   int notif_pipe_fd; // Descriptor para o pipe de notificações
 
   // Chama o kvs_connect para se conectar ao servidor
