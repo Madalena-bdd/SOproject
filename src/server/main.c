@@ -18,6 +18,8 @@
 #include "io.h"
 #include "pthread.h"
 
+#define BUFFER_SIZE 10
+
 struct SharedData {
   DIR* dir;
   char* dir_name;
@@ -37,11 +39,31 @@ typedef struct Cliente {
   struct Cliente* next;
 } Cliente;
 
+typedef struct {
+Cliente* buffer[BUFFER_SIZE];
+size_t in;
+size_t out;
+size_t count;
+pthread_mutex_t mutex;
+pthread_cond_t not_empty;
+pthread_cond_t not_full;
+} Buffer;
+
+Buffer client_buffer = {
+.in = 0,
+.out = 0,
+.count = 0,
+.mutex = PTHREAD_MUTEX_INITIALIZER,
+.not_empty = PTHREAD_COND_INITIALIZER,
+.not_full = PTHREAD_COND_INITIALIZER
+};
+
 Cliente* clients = NULL; 
 
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t n_current_backups_lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t sessions_lock = PTHREAD_MUTEX_INITIALIZER;
+
 //Esperar por Desconexões
 int active_threads = 0;
 pthread_mutex_t thread_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -60,10 +82,15 @@ char active_sessions_list[MAX_SESSIONS][PATH_MAX]; // LISTA DE SESSÕES ATIVAS
 // Declarações das funções
 int handle_subscribe(int client_id, const char* key);
 int handle_unsubscribe(int client_id, const char* key);
-void* client_handler(void* arg);
+void client_handler(Cliente* novo_cliente);
 void* connection_manager(void* arg);
 void handle_connect(Cliente* novo_cliente);
-void handle_connection_requests(int req_fd);
+void buffer_put(Buffer* buffer, Cliente* client);
+Cliente* buffer_get(Buffer* buffer);
+void buffer_remove(Buffer* buffer, Cliente* client);
+void start_client_threads(size_t num_threads);
+void cleanup_fifo_server();
+void* client_manager_pointer(void* arg);
 
 
 // ------JOBS------ (1ªentrega)
@@ -552,14 +579,14 @@ void* connection_manager(void* arg) {
                 memset(novo_cliente->chaves_subscritas, 0, sizeof(novo_cliente->chaves_subscritas)); // Inicializa as chaves como 0
                 novo_cliente->next = NULL;
 
+                buffer_put(&client_buffer, novo_cliente);
+
                 // Adicionar o cliente à lista ligada
                 pthread_mutex_lock(&sessions_lock);
                 novo_cliente->next = clients;
                 clients = novo_cliente;
                 pthread_mutex_unlock(&sessions_lock);
 
-                // Call handle_connect to handle the connection
-                handle_connect(novo_cliente);
             }
         }
     }
@@ -574,8 +601,9 @@ void handle_connect(Cliente* novo_cliente) {
 
     if (req_fd == -1 || resp_fd == -1 || notif_fd == -1) {
         perror("Erro ao abrir FIFOs do cliente");
+        
         // Responder ao cliente com erro
-        char error_message[] = "0"; // erro = 0
+        char error_message[] = "1"; // erro = 1
         write(resp_fd, error_message, strlen(error_message));
         if (req_fd != -1) close(req_fd);
         if (resp_fd != -1) close(resp_fd);
@@ -584,18 +612,49 @@ void handle_connect(Cliente* novo_cliente) {
     }
 
     // Responder ao cliente com sucesso
-    char success_message[] = "1"; // sucesso = 1
+    char success_message[] = "0"; // sucesso = 0
     write(resp_fd, success_message, strlen(success_message));
 
     // Passar os descritores para uma thread dedicada
     novo_cliente->req_pipe_fd = req_fd;
     novo_cliente->resp_pipe_fd = resp_fd;
     novo_cliente->notif_pipe_fd = notif_fd;
-
-    pthread_t client_thread;
-    pthread_create(&client_thread, NULL, client_handler, novo_cliente);
 }
 
+void client_handler(Cliente* novo_client) {
+    Cliente* client = buffer_get(&client_buffer);
+    char buffer[1024];
+    handle_connect(novo_client);
+    while (1) {
+        // Ler o pedido do cliente
+        ssize_t n = read(client->req_pipe_fd, buffer, sizeof(buffer));
+        if (n <= 0) break;  // Desconexão ou erro
+
+        // Processar o pedido
+        handle_client_request(client->id, buffer);
+
+        // Responder ao cliente
+        write(client->resp_pipe_fd, "0", 1);  // Sucesso
+    }
+
+    // Fechar FIFOs
+    close(client->req_pipe_fd);
+    close(client->resp_pipe_fd);
+    close(client->notif_pipe_fd);
+
+    // Remover cliente da lista ligada
+    //remove_session(client->fifo_request);
+
+    // Liberar memória
+    free(client);
+
+    pthread_mutex_lock(&thread_mutex);
+    active_threads--;
+    pthread_cond_signal(&thread_cond);
+    pthread_mutex_unlock(&thread_mutex);
+
+    return NULL;
+}
 
 // ------PEDIDOS CLIENTE (SUBSCRIBE, UNSUBSCRIBE, DISCONNECT)------
 // Função principal para lidar com os pedidos do cliente
@@ -612,52 +671,16 @@ void handle_client_request(int client_id, const char* command) { // o connect é
     // Processamento do comando
     if (strcmp(command_type, "3") == 0) { //SUBSCRIBE==3
         handle_subscribe(client_id, argument);
+        printf("Cliente %d subscrived\n", client_id);
     } else if (strcmp(command_type, "4") == 0) { //UNSUBSCRIBE==4
         handle_unsubscribe(client_id, argument);
+        printf("Cliente %d unsubscrived\n", client_id);
     } else if (strcmp(command_type, "2") == 0) { //DISCONNECT==2
         //handle_disconnect(client_id);
+        printf("Cliente %d disconnected\n", client_id);
     } else {
         fprintf(stderr, "Comando desconhecido: %s\n", command_type);
     }
-}
-
-
-void* client_handler(void* arg) {
-    Cliente* client = (Cliente*)arg;
-    char buffer[1024];
-
-    while (1) {
-        // Ler o pedido do cliente
-        ssize_t n = read(client->req_pipe_fd, buffer, sizeof(buffer));
-        if (n <= 0) break;  // Desconexão ou erro
-
-        // Processar o pedido
-        if (strncmp(buffer, "2", 10) == 0) { //disconnect == 2
-            printf("Cliente %d desconectado\n", client->id);
-            break;
-        }
-
-        // Responder ao cliente
-        write(client->resp_pipe_fd, "0", 1);  // Sucesso
-    }
-
-    // Fechar FIFOs
-    close(client->req_pipe_fd);
-    close(client->resp_pipe_fd);
-    close(client->notif_pipe_fd);
-
-    // Remover cliente da lista ligada
-    remove_session(client->fifo_request);
-
-    // Liberar memória
-    free(client);
-
-    pthread_mutex_lock(&thread_mutex);
-    active_threads--;
-    pthread_cond_signal(&thread_cond);
-    pthread_mutex_unlock(&thread_mutex);
-
-    return NULL;
 }
 
 /*
@@ -747,4 +770,81 @@ int handle_unsubscribe(int client_id, const char* key) {
     }
 
     return 0;  // Sucesso
+}
+
+
+// Server precisa buffer producer consumer, cada client tem ma thread dedicada. 
+// Dar start ás threads dos clientes e depois com a ajuda do buffer producer consumer,
+// a thread manager tem de passar os clients para a proxima thread disponível
+
+void buffer_put(Buffer* buffer, Cliente* client) {
+  pthread_mutex_lock(&buffer->mutex);
+  while (buffer->count == BUFFER_SIZE) {
+    pthread_cond_wait(&buffer->not_full, &buffer->mutex);
+  }
+  buffer->buffer[buffer->in] = client;
+  buffer->in = (buffer->in + 1) % BUFFER_SIZE;
+  buffer->count++;
+  pthread_cond_signal(&buffer->not_empty);
+  pthread_mutex_unlock(&buffer->mutex);
+}
+
+Cliente* buffer_get(Buffer* buffer) {
+  pthread_mutex_lock(&buffer->mutex);
+  while (buffer->count == 0) {
+    pthread_cond_wait(&buffer->not_empty, &buffer->mutex);
+  }
+  Cliente* client = buffer->buffer[buffer->out];
+  buffer->out = (buffer->out + 1) % BUFFER_SIZE;
+  buffer->count--;
+  pthread_cond_signal(&buffer->not_full);
+  pthread_mutex_unlock(&buffer->mutex);
+  return client;
+}
+
+void buffer_remove(Buffer* buffer, Cliente* client) {
+  pthread_mutex_lock(&buffer->mutex);
+  size_t i = buffer->out;
+  while (i != buffer->in) {
+    if (buffer->buffer[i] == client) {
+      for (size_t j = i; j != buffer->in; j = (j + 1) % BUFFER_SIZE) {
+        buffer->buffer[j] = buffer->buffer[(j + 1) % BUFFER_SIZE];
+      }
+      buffer->in = (buffer->in - 1 + BUFFER_SIZE) % BUFFER_SIZE;
+      buffer->count--;
+      pthread_cond_signal(&buffer->not_full);
+      break;
+    }
+    i = (i + 1) % BUFFER_SIZE;
+  }
+  pthread_mutex_unlock(&buffer->mutex);
+}
+
+void start_client_threads(size_t num_threads) {
+pthread_t* threads = malloc(num_threads * sizeof(pthread_t));
+if (threads == NULL) {
+  fprintf(stderr, "Failed to allocate memory for threads\n");
+  return;
+}
+for (size_t i = 0; i < num_threads; i++) {
+  if (pthread_create(&threads[i], NULL, client_manager_pointer, NULL) != 0) {
+    fprintf(stderr, "Failed to create thread %zu\n", i);
+    free(threads);
+    return;
+  }
+}
+for (size_t i = 0; i < num_threads; i++) {
+  pthread_join(threads[i], NULL);
+}
+free(threads);
+}
+void* client_manager_pointer(void* arg) {
+  while (1) {
+    Cliente* client = buffer_get(&client_buffer);
+    client_handler(client);
+    
+    // Remove client from buffer
+    buffer_remove(&client_buffer, client);
+  }
+  return NULL;
 }
